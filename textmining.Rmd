@@ -1,0 +1,163 @@
+---
+title: "Text-Mining and Keyword Analysis"
+author: "Christopher Jones"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+<style>
+.leaflet {
+    margin: auto;
+}
+</style>
+
+```{r setup, include=FALSE, message=FALSE, warning=F}
+knitr::opts_chunk$set(echo = T)
+```
+
+What follows is a text-mining analysis of recent customer reviews. This analysis, descriptive in nature, is followed by a summary of preliminary results from recent predictive analyses examining the relationship between word frequency and the likelihood of repeat purchase. In simpler terms: customer reviews were mined for keywords, and keywords were correlated with likelihood of repeat purchase to discover statistical significance. 
+
+The upshot of these analyses: streamlined marketing budgets and optimized ad copy. For example, customers that use words like "crewneck", "simple", and "sweater", when describing the company and its products, are more likely to repeat purchase than customers that do not use these terms. Accordingly, ad copy that employs these words will likely attract higher performing customers.  
+
+All analyses are conducted in R.
+
+### Load Necessary Libraries, Read-In Relevant Data, and Manipulate Data
+
+Below is code used to create a data frame of each customer's review. It also provides an example of the procedures used to conduct each text-mining analysis. 
+
+```{r static-plot, message=F,warning=F, fig.width=12}
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(wordcloud2)
+library(ggplot2)
+
+cname <- file.path("~", "Desktop", "text_mine", "text") 
+
+docs <- VCorpus(DirSource(cname)) 
+
+docs <- tm_map(docs,removePunctuation) 
+for (j in seq(docs)) {
+  docs[[j]] <- gsub("/", " ", docs[[j]])
+  docs[[j]] <- gsub("@", " ", docs[[j]])
+  docs[[j]] <- gsub("\\|", " ", docs[[j]])
+  docs[[j]] <- gsub("\u2028", " ", docs[[j]])
+}
+
+docs <- tm_map(docs, removeNumbers)
+docs <- tm_map(docs, tolower)   
+docs <- tm_map(docs, PlainTextDocument)
+
+docs <- tm_map(docs, removeWords, stopwords("english"))   
+docs <- tm_map(docs, PlainTextDocument)
+
+docs <- tm_map(docs, removeWords, c("the", "and", "itds", "can"))  
+
+for (j in seq(docs))
+{
+  docs[[j]] <- gsub("crew neck", "crewneck", docs[[j]])
+}
+docs <- tm_map(docs, PlainTextDocument)
+
+docs <- tm_map(docs, stripWhitespace)
+docs <- tm_map(docs, PlainTextDocument)
+
+dtm <- DocumentTermMatrix(docs) 
+
+tdm <- TermDocumentMatrix(docs)   
+m <- as.matrix(dtm)   
+
+dtms <- removeSparseTerms(dtm, 0.2) 
+freq <- colSums(as.matrix(dtm))
+freq <- colSums(as.matrix(dtms))  
+freq <- sort(colSums(as.matrix(dtm)), decreasing=TRUE) 
+
+wf <- data.frame(word=names(freq), freq=freq)   
+```
+
+### Word Cloud to Assess Frequency of Keywords
+
+```{r clean-data-sf, fig.align = 'center', message=F, warning=F}
+set.seed(1234)
+wordcloud(words = wf$word, freq = wf$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, shape = 'circle',
+          colors=brewer.pal(8, "Dark2"))
+```
+
+### Bar Chart and Radial Chart to Assess Frequency of Keywords 
+
+```{r basemap-sf, fig.align = 'center', message=F, warning=F}
+p <- ggplot(subset(wf, freq>10), aes(x = reorder(word, -freq), y = freq, fill = freq)) +
+  geom_bar(stat = "identity") + 
+  labs(title="Word Frequency Analysis",
+       subtitle= "Keyword Analysis") + 
+  labs(x = NULL, y = NULL, fill= "Frequency") + 
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.text.x = element_text(angle = 90))
+p 
+```
+
+```{r neighborhood-map-sf, fig.align = 'center', message=F, warning=F}
+ggplot(subset(wf, freq>12), aes(x=word, y=freq, fill=freq)) + 
+  geom_bar(width = 0.75,  stat = "identity", colour = "black", size = .5) + 
+  coord_polar(theta = "x") + 
+  xlab("") + ylab("") + 
+  labs(title="Word Frequency Analysis",
+       subtitle= "Keyword Analysis") + 
+  theme(legend.position = "none") + 
+  labs(x = NULL, y = NULL)
+```
+
+### Correlation Matrix
+
+Based on the data visualizations above, we see that high performing customers use terms like "simple", "luxury", and "crewneck" to describe the company and its products. Prior to conducting a predictive analysis of the results, it's advisable to examine a correlation matrix in the form of a heatmap to better understand the relationship between words. This facilitates the better development of predictive models. 
+
+```{r stuff 1, fig.align = 'center', message=F, warning=F}
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+
+customerreview = read.csv("logregression.csv")
+newdata= select(customerreview,-c(purchase,customer, word142))
+
+map <- round(cor(newdata),2)
+melted_cormat <- melt(map)
+
+p = ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()+
+  labs(title="Correlation Matrix Heat Map ",
+       subtitle= "Keyword Analysis") +
+theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.text.x = element_text(angle = 90))
+p
+```
+
+The Correlation Matrix suggests that Word 1, Word 2, and Word 3 are highly correlated ("crewneck", "sweater", and "cashmere").
+
+This makes intuitive sense: customers are likely to use these words together when talking about the company and its products. 
+
+It's advisable to use these words extensively when drafting ad copy and website copy. Conversely, for model building and predictive analysis, the words are redundant. As seen below, only Word 1 is included. (Note that a Primary Component Analysis would work well to reduce the dimensions of the data frame, but for now a Correlation Matrix and industry expertise serve as guides to the end of dimension reduction.) 
+
+### Logisitic Regression
+
+We now conduct a logistic regression to better understand the likelihood of repeat purchase based on use of the keywords discovered above. 
+
+```{r stuff 2, fig.align = 'center', message=F, warning=F}
+library(stargazer)
+mylogit <- glm(purchase ~ word1+ word5 + word13 + word16, data = customerreview, family = "binomial")
+stargazer(mylogit, type = "text",
+          digits = 3,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digit.separator = "")
+exp(coef(mylogit))
+```
+
+Coefficients are exponentiated to find Odds Ratios. 
+
+### Conclusions
+
+In general, the results above indicate the following: use of the Word 1 (crewneck) increases the likelihood of repeat purchase by a factor of 1.022, or 2.2%, whereas use of Word 5 (wardrobe), decreases the likelihood of purchase by a factor of 0.77, or 23%. A mixed model approach with customer as the random effect offers findings consistent with those mentioned above. Marketers will likely find these conclusions instructive during development of ad copy.
