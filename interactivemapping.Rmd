@@ -1,0 +1,233 @@
+---
+title: "Data Visualization: Interactive Maps"
+author: "Christopher Jones"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+<style>
+.leaflet {
+    margin: auto;
+}
+</style>
+
+```{r setup, include=FALSE, message=FALSE, warning=F}
+knitr::opts_chunk$set(echo = T)
+```
+
+What follows is a data visualization of transactions in San Francisco, CA, and Ohio. Please note that this version of the report contains fictionalized data. 
+
+Importantly, this project is exploratory in nature: the analyses here contained are descriptive and lay groundwork for subsequent predictive analyses. Said predictive models are currently under construction, and reports with relevant results are forthcoming. The models under construction are logistic, multi-level models that assess the relationship between time on site and likelihood of purchase, among other key predictors. 
+
+The upshot of these analyses and visualizations: streamlined marketing budgets and optimized website copy. For example, in-depth analysis of transactions in specific Census Tracts, coupled with other demographic information, provides business owners insights into consumer behavior and allows for a more targeted advertising approach. 
+
+Note that the maps are interactive. Feel free to double click to zoom-in, or refresh the browser to reset maps. All analyses are conducted in R.
+
+### Importing, Downloading, and Reading-in Data 
+
+The shapefile overlay of neighborhoods for San Francisco, CA can be found at the following url: https://data.sfgov.org/Geographic-Locations-and-Boundaries/SF-Find-Neighborhoods/pty2-tcw4. 
+
+The shapefile overlay for Ohio Census Tracts can be found at the following url: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html. 
+
+Below we load necessary libraries, read in necessary data sets, and conduct various data manipulations.
+
+```{r static-plot, echo=F,message=F,warning=F, fig.width=12}
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(viridis)
+neighborhoods <- read_sf("sf_neighborhoods")
+lonlatca = read.csv("lonlat.purchases.sfca2.csv")
+neighborhoods_clean <- neighborhoods %>% 
+  st_transform(4326) %>% 
+  mutate(name = paste0('<b>Neighborhood:</b> ', name))
+lonlatca_clean <- lonlatca %>% 
+  mutate(popup = paste(paste0('<b>Purchase Amount: </b>$', paymentamount),
+                             paste0('<b>Address: </b>', address)))
+```
+
+
+### Transactions in San Francisco, CA per neighborhood. 
+
+Please note that the tiles and points are interactive. Simply click on a tile or point of interest to zoom in or gain information regarding the specific transaction.
+
+```{r neighborhood-and-markers-map-sf, message=F, warning=F}
+pal <- colorFactor(
+  palette = viridis_pal(begin = .4, end = .95, option = 'A')(3),
+  domain = lonlatca$paymentamountbucket
+)
+leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(data = neighborhoods_clean,
+              color = 'white',
+              weight = 1.5,
+              opacity = 1,
+              fillColor = 'black',
+              fillOpacity = .8,
+              highlightOptions = highlightOptions(color = "#FFF1BE", 
+                                                  weight = 5),
+              popup = ~name) %>%
+  addCircleMarkers(data = lonlatca_clean,
+                   popup = ~popup,
+                   stroke = F,
+                   radius = 5,
+                   fillColor = ~pal(paymentamountbucket),
+                   fillOpacity = 1) %>%
+ addLegend(data = lonlatca_clean,
+            pal = pal,
+            values = ~paymentamountbucket,
+            title = "Purchases in San Francisco") 
+```
+
+### Note about Ohio
+
+For our Ohio analysis, we begin by overviewing transacations for the entire state. We then view transactions for Hamilton County, and ultimately we analyze transactions for Censust Tract 024400, a suburb of Cincinnati, Ohio. Again, all maps are interactive. Simply click on a tile or point of interest to zoom in or gain information regarding the specific transaction. Overlays for Ohio are for Census Tracts rather than for neighborhoods. 
+
+### Importing, Downloading, and Reading-in Data 
+
+Here we manipulate our data: note the creation of popups, mutations and transforms of data sets. 
+
+```{r load-data-ohio_census, message=F, warning=F}
+neighborhoods <- read_sf("ohio_census")
+lonlatohiocensus = read.csv("ohiolonlatpurchases1.csv")
+neighborhoods_clean <- neighborhoods %>% 
+  st_transform(4326) %>% 
+  mutate(name = paste0('<b>Census Tract:</b> ', TRACTCE))
+lonlatohiocensus_clean <- lonlatohiocensus %>% 
+  mutate(popup = paste(paste0('<b>Purchase Amount: </b>$', paymentamount),
+                       paste0('<b>Address: </b>', address)))
+```
+
+### Transactions for Ohio, per Census Tract 
+
+Please note that the tiles and points are interactive. Simply click on a tile or point of interest to zoom in or gain information regarding the specific transaction.
+
+```{r final-map-ohio, message=F, warning=F}
+pal <- colorFactor(
+  palette = viridis_pal(begin = .4, end = .95, option = 'A')(3),
+  domain = lonlatohiocensus$paymentamountbucket
+)
+leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(data = neighborhoods_clean,
+              color = 'white',
+              weight = 1.5,
+              opacity = 1,
+              fillColor = 'black',
+              fillOpacity = .8,
+              highlightOptions = highlightOptions(color = "#FFF1BE", 
+                                                  weight = 5),
+              popup = ~name) %>%
+  
+  addCircleMarkers(data = lonlatohiocensus_clean,
+                   popup = ~popup,
+                   stroke = F,
+                   radius = 5,
+                   fillColor = ~pal(paymentamountbucket),
+                   fillOpacity = 1) %>%
+  addLegend(data = lonlatohiocensus_clean,
+            pal = pal,
+            values = ~paymentamountbucket,
+            title = "Purchases in Ohio") 
+```
+
+### Importing, Loading, and Selecting Data for Hamilton County, OH
+
+```{r load-data, message=F, warning=F}
+neighborhoods <- read_sf("ohio_census")
+neighborhoods <- subset(neighborhoods, COUNTYFP=='061') 
+lonlathamilton = read.csv("lonlat.purchases.cincinnati2.csv")
+neighborhoods_clean <- neighborhoods %>% 
+  st_transform(4326) %>% 
+  mutate(name = paste0('<b>Census Tract:</b> ', TRACTCE))
+lonlathamilton_clean <- lonlathamilton %>% 
+  mutate(popup = paste(paste0('<b>Purchase Amount: </b>$', paymentamount),
+                       paste0('<b>Address: </b>', address)))
+```
+
+### Transactions for Hamilton County, OH, per Census Tract 
+
+Simply click on a tile or point of interest to zoom in or gain information regarding the specific transaction.
+
+```{r final-map-hamilton county, message=F, warning=F}
+pal <- colorFactor(
+  palette = viridis_pal(begin = .4, end = .95, option = 'A')(3),
+  domain = lonlathamilton_clean$paymentamountbucket
+)
+
+leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(data = neighborhoods_clean,
+              color = 'white',
+              weight = 1.5,
+              opacity = 1,
+              fillColor = 'black',
+              fillOpacity = .8,
+              highlightOptions = highlightOptions(color = "#FFF1BE", 
+                                                  weight = 5),
+              popup = ~name) %>%
+  
+  addCircleMarkers(data = lonlathamilton_clean,
+                   popup = ~popup,
+                   stroke = F,
+                   radius = 5,
+                   fillColor = ~pal(paymentamountbucket),
+                   fillOpacity = 1) %>%
+  addLegend(data = lonlathamilton_clean,
+            pal = pal,
+            values = ~paymentamountbucket,
+            title = "Purchases in Hamilton County") 
+```
+
+### Importing and Loading Data for Census Tract 024400
+
+Note the subsetting of Census Tract data for our target Census Tract.
+
+```{r load-data-024400, message=F, warning=F}
+neighborhoods <- read_sf("ohio_census")
+neighborhoods <- subset(neighborhoods, TRACTCE=='024400') 
+lonlat024400 = read.csv("lonlat.purchases.0244001.csv")
+neighborhoods_clean <- neighborhoods %>% 
+  st_transform(4326) %>% 
+  mutate(name = paste0('<b>Census Tract:</b> ', TRACTCE))
+lonlat024400_clean <- lonlat024400 %>% 
+  mutate(popup = paste(paste0('<b>Purchase Amount: </b>$', paymentamount),
+                       paste0('<b>Address: </b>', address)))
+```
+
+
+### Transactions for Census Tract 024400
+
+```{r final-map-024400, message=F, warning=F}
+pal <- colorFactor(
+  palette = viridis_pal(begin = .4, end = .95, option = 'A')(3),
+  domain = lonlat024400_clean$paymentamountbucket
+)
+leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(data = neighborhoods_clean,
+              color = 'white',
+              weight = 1.5,
+              opacity = 1,
+              fillColor = 'black',
+              fillOpacity = .8,
+              highlightOptions = highlightOptions(color = "#FFF1BE", 
+                                                  weight = 5),
+              popup = ~name) %>%
+  
+  addCircleMarkers(data = lonlat024400_clean,
+                   popup = ~popup,
+                   stroke = F,
+                   radius = 5,
+                   fillColor = ~pal(paymentamountbucket),
+                   fillOpacity = 1) %>%
+  addLegend(data = lonlat024400_clean,
+            pal = pal,
+            values = ~paymentamountbucket,
+            title = "Purchases in Census Tract 024400") 
+```
+
+### Conclusions
+
+For conclusions about California, please see forthcoming report mentioned at the outset of this data visualization.  
