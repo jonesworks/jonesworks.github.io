@@ -1,0 +1,557 @@
+---
+title: "Data Analysis"
+author: "Christopher Jones"
+output:
+ html_document:
+    theme: readable
+    highlight: textmate
+    toc: true
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=F}
+knitr::opts_chunk$set(echo = T)
+```
+### 1. Time On Site and Order Value in California
+
+What follows is an analysis of Time Spent on Site and Order Value for orders in California. Note that the data is fictionalized. 
+
+We first visualize the data and then proceed with various statistical analyses. This project sheds light on the relationship between Time Spent on Site and Order Value. Time Spent on Site is an overall measure of time customers spend from acquisition to purchase. It gives a fingertip feel for the customer's journey and provides insight into consumer behavior. These insights can be useful for marketing initiatives.
+
+### 2. Load Libraries for Mapping
+
+```{r libraries, message=F,warning=F, fig.width=12}
+library(ggplot2)
+library(maps)
+library(mapdata)
+```
+
+### 3. Import and Subset Relevant Data Sets
+
+```{r load-data, message=F, warning=F}
+lonlatca = read.csv("lon lat pc purchases CA.csv")
+states =  map_data("state")
+ca_df <- subset(states, region == "california")
+counties <- map_data("county")
+ca_county <- subset(counties, region == "california")
+```
+
+### 4. First Map for Data Visualization
+
+```{r plot-data, fig.align = 'center', message=F, warning=F}
+p = ggplot(data = ca_df) + 
+  geom_polygon(aes(x = long, y = lat, fill = order, group = group), color = "white") +
+  coord_fixed(1.3) + 
+  coord_fixed(xlim = c(-123.9, -114.5),  ylim = c(41.5, 32.8), ratio = 1.3) +
+  guides(fill=FALSE) +
+  xlab(label = "Longitude") +
+  ylab(label = "Latitude") +
+  ggtitle("California") +
+  theme_light()
+p
+```
+
+### 5. Second Map for Data Visualization
+
+```{r firstmap, fig.align = 'center', message=F, warning=F}
+p = 
+  p + 
+  geom_point(data=lonlatca, 
+             aes(x=lon, y=lat, 
+                 color=paymentamount), 
+             size = 2) 
+
+p = 
+  p + 
+  scale_color_gradient(low="blue", 
+                       high="red") 
+
+p +
+  labs(colour = "Revenue") + 
+  ggtitle("Purchases in California") +
+  xlab(label = "Longitude") +
+  ylab(label = "Latitude") + 
+  theme_light()
+  
+```
+
+### 6. San Francisco and Oakland Detail
+
+```{r secondmap, fig.align = 'center', message=F, warning=F}
+p + 
+  coord_fixed(xlim = c(-124.0, -121.0),  ylim = c(36.5, 38.5), ratio = 1.3) +
+  labs(colour = "Revenue") + 
+  ggtitle("San Francisco and Oakland") +
+  xlab(label = "Longitude") +
+  ylab(label = "Latitude") + 
+  theme_light()
+```
+
+### 7. Los Angeles and San Diego Detail
+
+```{r thirdmap, fig.align = 'center', message=F, warning=F}
+p + 
+  coord_fixed(xlim = c(-116.8, -119.2),  ylim = c(32.5, 34.7), ratio = 1.3) +
+  labs(colour = "Revenue") + 
+  ggtitle("Los Angeles and San Diego Detail") +
+  xlab(label = "Longitude") +
+  ylab(label = "Latitude") + 
+  theme_light()
+```
+
+### 8. Data Analysis
+
+### 9. Read in Data Set
+
+```{r cds-data-set, fig.align = 'center', message=F, warning=F}
+cds = read.csv("California Data Set.csv")
+```
+
+### 10. Plot of Time on Site and Revenue for California
+
+Below is a small negative relationship between Time Spent on Site and Revenue. In other words, on visual inspection, it appears that there is no relationship between Time Spent on Site and Revenue. 
+
+```{r somestuff1, fig.align = 'center', message=F, warning=F}
+library(ggplot2)
+prelim_plot = ggplot(cds, aes(x = cds$secondsonsitepriorpurchase, y = cds$revenue)) + 
+  geom_point() +
+  geom_smooth(method="lm") +
+  ggtitle("California") +
+  xlab(label = "Time On Site") +
+  ylab(label = "Revenue") + 
+  theme_light()
+prelim_plot
+```
+
+### 11. Significance Test: Simple Regression
+
+We begin with a simple regression to a get a better feel for the data.
+
+```{r somestuff2, fig.align = 'center', message=F, warning=F}
+s.lm <- lm(revenue ~ secondsonsitepriorpurchase, data = cds)
+summary(s.lm)$r.squared
+```
+The R-Squared value above and the summary below indicate that Time Spent on Site is not a significant predictor of Revenue. This supports our visual inpsection above: i.e., that Time Spent on Site and Revenue are not correlated. 
+
+### 12. Test Statistic Print Out
+
+```{r somestuff3, fig.align = 'center', message=F, warning=F}
+library(stargazer)
+stargazer(s.lm, type = "text",
+          digits = 3,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digit.separator = "")
+```
+
+### 13. More Plotting: Time on Site and Revenue, with Color Coding for California City Groupings.
+
+```{r somestuff4, fig.align = 'center', message=F, warning=F}
+prelim_plot = ggplot(cds, aes(x = cds$secondsonsitepriorpurchase, y = cds$revenue)) + 
+  geom_point(aes(color=city)) +
+  geom_smooth(method="lm") +
+  ggtitle("California") +
+  xlab(label = "Time On Site") +
+  ylab(label = "Revenue") + 
+  labs(colour = "City") 
+prelim_plot
+```
+
+The data look somewhat cluttered. For greater clarity we conduct split-plots. 
+
+### 14. Time on Site and Revenue, Split by City
+
+```{r somestuff5, fig.align = 'center', message=F, warning=F}
+split_plot <- ggplot(aes(secondsonsitepriorpurchase, revenue), data = cds) + 
+    geom_point(aes(color=city)) + 
+    facet_wrap(~ city) + 
+    xlab("Time On Site") + 
+    ylab("Revenue") +
+    labs(colour = "City")
+split_plot
+```
+
+Adding trend lines shows the behavior of data per group.
+
+```{r somestuff6, fig.align = 'center', message=F, warning=F}
+split_plot <- ggplot(aes(secondsonsitepriorpurchase, revenue), data = cds) + 
+    geom_point(aes(color=city)) + 
+    facet_wrap(~ city) + 
+    xlab("Time On Site") + 
+    ylab("Revenue") +
+    labs(colour = "City") +
+    geom_smooth(method="lm") 
+split_plot
+```
+
+As a final step in our intial exploratory analysis prior to our development of more complex models, we conduct a multiple regression.
+
+### 15. Multiple Regression 
+
+We first set orthogonal contrast codes and then fit our linear model to the data.
+
+```{r somestuff7, fig.align = 'center', message=F, warning=F}
+contrasts(cds$city) = "contr.sum"
+contrasts(cds$device) = "contr.sum"
+m.lm <- lm(revenue ~ secondsonsitepriorpurchase + city + device, data = cds)
+summary(m.lm)$r.squared
+```
+Our R-Squared value is significantly improved when we control for City and Device. 
+
+```{r somestuff8, fig.align = 'center', message=F, warning=F}
+stargazer(m.lm, type = "text",
+          digits = 3,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digit.separator = "")
+```
+
+The results above indicate that City and Device are significant predictors of Revenue, but Time Spent on Site is not. This is somewhat counterintuitive, and further analysis is required. 
+
+With our visualization and initial exploratory data analysis complete, we move on to more complex model creation. 
+
+### 16. Note
+
+It seems advisable to analyze each City more carefully. Said analysis would likely result in a better understanding of how to approach each City from a marketing standpoint. The analyses above fail to account for variability in each City. After an in-depth analysis of Time Spent on Site and Revenue as it pertains to each City, we return to a model for all of California.
+
+### 17. Analysis of Key California City, Eureka: Multiple Regression and LMM 
+
+Read in relevant data set and subset according to key cities.
+
+```{r somestuff9, fig.align = 'center', message=F, warning=F}
+cds = read.csv("California Data Set.csv")
+eureka <- cds[cds$city == "Eureka", ]
+LosAngeles <- cds[cds$city == "Los Angeles", ]
+Oakland <- cds[cds$city == "Oakland", ]
+SanDiego <- cds[cds$city == "San Diego", ]
+SanFrancisco <- cds[cds$city == "San Francisco", ]
+```
+
+### 18. Plots and Split-Plots by Device to Develop Intuition 
+
+```{r somestuff10, fig.align = 'center', message=F, warning=F}
+prelim_plot = ggplot(eureka, aes(x = eureka$secondsonsitepriorpurchase, y = eureka$revenue)) + 
+  geom_point(aes(color=device)) +
+  geom_smooth(method="lm") +
+  xlab("Seconds on Site Prior Purchase") + 
+  ylab("Revenue") +
+  labs(colour = "Device") +
+  ggtitle("Eureka") 
+prelim_plot
+```
+
+```{r somestuff11, fig.align = 'center', message=F, warning=F}
+split_plot <- ggplot(aes(secondsonsitepriorpurchase, revenue), data = eureka) + 
+  geom_point(aes(color=device)) + 
+  geom_smooth(method="lm") +
+  facet_wrap(~ device) + 
+  xlab("Seconds on Site Prior Purchase") + 
+  ylab("Revenue") +
+  labs(colour = "Device") + 
+  ggtitle("Eureka") 
+split_plot
+```
+
+### 19. Load Libraries and Create Orthogonal Contrasts for Multiple Regression and LMM
+
+```{r somestuff12, fig.align = 'center', message=F, warning=F}
+library(lme4)
+library(lmerTest)
+library(car)
+library(stargazer)
+contrasts(eureka$device) = "contr.sum"
+eurekadevice.lm  <- lm(revenue ~ secondsonsitepriorpurchase+device, data = eureka)
+summary(eurekadevice.lm)$r.squared
+```
+Our R-Squared value suggests a strong model (mutliple regression). The report below contraverts the tentative conclusion we arrived at previously: Time on Site appears a significant predictor of Revenue, at least in Eureka, as does Device. 
+
+```{r somestuff13, fig.align = 'center', message=F, warning=F}
+stargazer(eurekadevice.lm, type = "text",
+          digits = 3,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digit.separator = "")
+```
+### 20. LMM: Here we incorporate the random effects for subject, subject and device, and we then compare models.
+
+First we fit the models:
+
+```{r somestuff14, fig.align = 'center', message=F, warning=F}
+eureka1.lmm = lmer(revenue ~ secondsonsitepriorpurchase + device + (1|clientid), data=eureka)
+eureka.lmm = lmer(revenue ~ secondsonsitepriorpurchase + (1|device/clientid), data=eureka)
+```
+
+We then compare our models.
+
+Comparison 1:
+
+```{r somestuff15, fig.align = 'center', message=F, warning=F}
+anova(eureka1.lmm, eureka.lmm)
+```
+
+Comparison Two: 
+
+```{r somestuff16, fig.align = 'center', message=F, warning=F}
+anova(eureka1.lmm, eurekadevice.lm)
+```
+
+Our Mixed Model with Subject (variable = clientid) significantly outperforms the other models. Let's look at our summary report and then conduct pairwise comparisons. 
+
+```{r somestuff17, fig.align = 'center', message=F, warning=F}
+eureka1.lmm = lmer(revenue ~ secondsonsitepriorpurchase + device + (1|clientid), data=eureka)
+Anova(eureka1.lmm, type=3, test.statistic="F")
+```
+
+And our ad hoc pariwise comparison. 
+
+```{r somestuff18, fig.align = 'center', message=F, warning=F}
+library(multcomp) # for glht
+library(emmeans) # for emm
+summary(glht(eureka1.lmm, emm(pairwise ~ device)), test=adjusted(type="holm"))
+```
+
+We find that Time on Site is not a significant predictor of Revenue in Eureka, but Device is. More specifically, we see that desktop outperforms both mobile and tablet, where mobile performs the worst. For marketers, it makes sense to focus on desktop advertising. 
+
+### 21. Analysis of Key California City, Los Angeles: Multiple Regression and LMM 
+
+### 22. Plots and Split Plots by Device to Develop Intuition 
+
+```{r somestuff19, fig.align = 'center', message=F, warning=F}
+prelim_plot = ggplot(LosAngeles, aes(x = secondsonsitepriorpurchase, y = revenue)) + 
+  geom_point(aes(color=device)) +
+  geom_smooth(method="lm") + 
+  xlab("Time On Site") + 
+  ylab("Revenue") +
+  labs(colour = "Device") +
+  ggtitle("Los Angeles") 
+prelim_plot
+```
+
+```{r somestuff20, fig.align = 'center', message=F, warning=F}
+split_plot <- ggplot(aes(secondsonsitepriorpurchase, revenue), data = LosAngeles) + 
+  geom_point(aes(color=device)) + 
+  geom_smooth(method="lm") +
+  facet_wrap(~ device) + 
+  xlab("Time On Site") + 
+  ylab("Revenue") +
+  labs(color = "Device") + 
+  ggtitle("Los Angeles") 
+split_plot
+```
+
+### 23. Load Libraries and Create Orthogonal Contrasts for Multiple Regression and LMM
+
+```{r somestuff21, fig.align = 'center', message=F, warning=F}
+contrasts(LosAngeles$device) = "contr.sum"
+ladevice.lm  <- lm(revenue ~ secondsonsitepriorpurchase+device, data = LosAngeles)
+summary(ladevice.lm)$r.squared
+```
+Our R-Squared value shows a strong model. The report below contraverts the tentative conclusion we arrived at previously: Time on Site appears a significant predictor of Revenue, at least in Los Angeles, as does Device. 
+
+```{r somestuff22, fig.align = 'center', message=F, warning=F}
+stargazer(ladevice.lm, type = "text",
+          digits = 3,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digit.separator = "")
+```
+### 24. LMM: Here we incorporate the random effects of subject, subject and device, and we then compare models.
+
+First we fit the models.
+
+```{r somestuff23, fig.align = 'center', message=F, warning=F}
+losangeles1.lmm = lmer(revenue ~ secondsonsitepriorpurchase + device + (1|clientid), data=LosAngeles)
+losangeles.lmm = lmer(revenue ~ secondsonsitepriorpurchase + (1|device/clientid), data=LosAngeles)
+```
+
+We then compare our models.
+
+Comparison 1:
+
+```{r somestuff24, fig.align = 'center', message=F, warning=F}
+anova(losangeles1.lmm, losangeles.lmm)
+```
+
+Comparison 2: 
+
+```{r somestuff25, fig.align = 'center', message=F, warning=F}
+anova(losangeles1.lmm, ladevice.lm)
+```
+
+Our Mixed Model with random effect Subject (variable = clientid) significantly outperforms the other mixed effect model, but does not outperform our multiple regression. Let's look at our summary report and then conduct pairwise comparisons. 
+
+```{r somestuff26, fig.align = 'center', message=F, warning=F}
+losangeles1.lmm = lmer(revenue ~ secondsonsitepriorpurchase + device + (1|clientid), data=LosAngeles)
+Anova(losangeles1.lmm, type=3, test.statistic="F")
+```
+
+And our ad hoc pair-wise comparison. 
+
+```{r somestuff27, fig.align = 'center', message=F, warning=F}
+library(multcomp) # for glht
+library(emmeans) # for emm
+summary(glht(losangeles1.lmm, emm(pairwise ~ device)), test=adjusted(type="holm"))
+```
+
+We find that Time on Site is a significant predictor of Revenue in Los Angeles. Device is also. More specifically, we see that desktop outperforms both mobile and tablet, where mobile performs the worst. For marketers, it makes sense to focus on desktop advertising, and it makes sense to cultivate engagement, or time on site. Mini-site marketing campaigns offering suppplementary material pertinent to products of interest might help to this end. 
+
+### 25. LMM for California
+
+Having completed our overview of the relationship betwen Time Spent on Site and Revenue in a few key cities in California, we now analyze consumer behavior for California as a whole. We first set contrast codes. We then fit our model and analyze our test statistic. Note that City and ClientId are random effects, with ClientId nested in City. The model below accounts for the group variation discovered above. Doing so allows us to speak to consumer behavior in California as a whole. 
+
+```{r somestuff28, fig.align = 'center', message=F, warning=F}
+contrasts(cds$device) = "contr.sum"
+contrasts(cds$city) = "contr.sum"
+contrasts(cds$channel) = "contr.sum"
+
+lmm = lmer(revenue ~ secondsonsitepriorpurchase + 
+                  pagespersession +
+                  device +
+                  transaction + 
+                  goalconversionrate + 
+                  (1|city/clientid), 
+           data = cds)
+Anova(lmm, type=3, test.statistic="F")
+summary(glht(lmm , emm(pairwise ~ device)), test=adjusted(type="holm"))
+```
+
+Above we see that Device and Pages per Session  are significant predictors of revenue in California. Importantly, Time Spent on Site is not a significant predictor of revenue. Further, and as indicated above, Device is a significant predictor of revenue, with Desktop outperforming both mobile and table, and tablet performing the worst
+
+### 26. Maching Learning and Predictive Modeling
+
+The analysis above examined the relationship between Time Spent on Site and Revenue for various key cities in California, and ultimately California in its entirety. It examined the relationship between Time Spent on Site and Revenue after accounting for other predictors and group level effects. We now employ techniques from Maching Learning to better understand  consumer behavior in California as it relates to all predictors in our data set. Many of the findings are consistent with those outlined above.  
+
+We first examine our continuous variables for correlations to the end of filtering our data set. 
+
+```{r somestuff29, fig.align = 'center', message=F, warning=F}
+library(caret)
+filteredCds = subset (cds, select = -c(clientid, city, landingpage, device, source, channel, profit))
+correlations <- cor(filteredCds)
+correlations[1:2, 1:2]
+library(corrplot)
+corrplot(correlations, order = "hclust")
+```
+
+Time Spent on Site, Session Count, and Time until Purchase are highly correlated, and they are therefore redundant for model building. We therefore drop the Variables from our analysis to remedy issues with redundancy, and we proceed with partitioning our data into test and training sets. 
+
+```{r somestuff31, fig.align = 'center', message=F, warning=F}
+highCorr <- findCorrelation(correlations, cutoff = .75) 
+length(highCorr)
+highCorr
+```
+
+
+```{r somestuff32, fig.align = 'center', message=F, warning=F}
+newCds = subset (cds, select = -c(timetopurchase, sessioncount, profit))
+inTrain <- createDataPartition(y=newCds$revenue,
+                               p=0.75, list=FALSE)
+training <- newCds[inTrain,]
+testing <- newCds[-inTrain,]
+```
+
+We construct our first model.
+
+```{r somestuff33, fig.align = 'center', message=F, warning=F}
+trainingParameters <- trainControl(method = "repeatedcv", 
+                                   number = 10, 
+                                   repeats=3)
+set.seed(32343)
+modelFit <- train(revenue ~.,
+                  data=training, 
+                  method="lm",
+                  trControl = trainingParameters)
+modelFit
+```
+
+Below we examine a partial print out of a table of comparisons. We also examine our R-Squared and correlation of predicted values and observed values. The resulting R-Squared indicates that our model is strong. 
+
+```{r somestuff34, fig.align = 'center', message=F, warning=F}
+predictions = predict(modelFit,newdata=testing)
+pred = c(predictions)
+obs = c(testing$revenue)
+compare = data.frame(pred,obs)
+head(compare)
+```
+
+Note the RMSE
+
+```{r somestuff35, fig.align = 'center', message=F, warning=F}
+postResample(pred, obs)
+correlation = cor(pred, obs)
+correlation
+```
+
+We also plot the observed values and the predicted values to better understand our model's fit. (The diagonal line suggests a perfect fit.) Again, our plot indicates that our model is robust.
+
+```{r somestuff36, fig.align = 'center', message=F, warning=F}
+axisRange <- extendrange(c(pred, obs))
+
+plot(obs, 
+     pred, 
+     ylim = axisRange, 
+     xlim = axisRange)
+abline(0, 1, col = "darkgrey", lty = 2)
+```
+
+We now assess variable importance in our model. 
+
+```{r somestuff37, fig.align = 'center', message=F, warning=F}
+ggplot(varImp(modelFit))
+```
+
+In general, we see Landing Page is an important predictor of revenue, as is Device and City. Our decision tree below corroborates the perspective. 
+
+```{r somestuff38, fig.align = 'center', message=F, warning=F}
+library(rpart)
+library(rpart.plot)
+set.seed(32343)
+tree.model <- rpart(revenue ~ ., data = newCds, method = "class", minbucket = 1)
+prp(tree.model) 
+```
+
+We now use a Random Forest model to corroborate our discoveries above and attempt to improve predictive accuracy. We see that Device, Landing Page, and City are some of our most important features. We also see that the Random Forest model, with respsect to RMSE, does not outperform our Linear Model. Nonetheless, the model affirms our understanding of important features when attempting to understand consumer behavior.
+
+```{r somestuff39, fig.align = 'center', message=F, warning=F}
+library(randomForest)
+set.seed(32343)
+RandomForestModel <- randomForest(revenue ~ . , 
+                         data = training, 
+                         importance = TRUE,
+                         ntree = 2000, 
+                         nodesize = 20,
+                         trControl = trainingParameters)
+RandomForestModel
+```
+
+Partial print-out of table of comparisons.
+
+```{r somestuff40, fig.align = 'center', message=F, warning=F}
+RandomForestPredictions <- predict(RandomForestModel, testing)
+predictions = predict(RandomForestModel,newdata=testing)
+pred = c(RandomForestPredictions)
+obs = c(testing$revenue)
+compare = data.frame(pred,obs)
+head(compare)
+```
+
+Note the RMSE
+
+```{r somestuff41, fig.align = 'center', message=F, warning=F}
+postResample(pred, obs)
+```
+
+
+```{r somestuff42, fig.align = 'center', message=F, warning=F}
+axisRange <- extendrange(c(pred, obs))
+
+plot(obs, 
+     pred, 
+     ylim = axisRange, 
+     xlim = axisRange)
+abline(0, 1, col = "darkgrey", lty = 2)
+```
+
+
+```{r somestuff43, fig.align = 'center', message=F, warning=F}
+varImpPlot(RandomForestModel)
+```
+
+### 27. Conclusions
+
+Overall, we see that the Linear Model is most effective in predicting outcomes. More importantly, viewing all of our tests in conjuction, we see that Device, Landing Page, and City are important features in model design, and significant predictors of revenue. Marketers should use this information to tailor advertising initiatives accordingly. 
