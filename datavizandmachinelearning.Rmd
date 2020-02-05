@@ -1,0 +1,1284 @@
+---
+title: 'Marketing Analytics'
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    number_sections: true
+    fig_caption: true
+    toc: true
+    theme: cosmo
+    highlight: tango
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=F}
+knitr::opts_chunk$set(echo = T)
+```
+
+# Introduction
+
+What follows is an analysis of applicant data for Donors Choose, an educational granting organization located in the United States. Donors Choose provides educational funding for schools and teachers alike. Teachers are first required to submit an application, and applications are either approved or denied.
+
+
+For this project, we begin with various data manipulations and feature engineering. Data manipulations include: target encoding, natural language processing, and other, more rudimentary, straightforward manipulations, like recoding variables and numericizing variables. Second, we create various data visualizations to facilitate the development of a thorough understanding of the data at hand. These visualizations are, in large part, descriptive, and, as such, deal with descriptive statistics. Third, we conduct various analyses of the data set (predictive modeling) in order to gain greater insight into what accounts for approval of a given application. (Our target variable is approved or not approved, 1 or 0).
+
+
+Note on the target variable: one of the main challenges in dealing with the following data set, with respect to predictive modeling, is that the target variable is highly imbalanced. In other words, most applications are approved. Now, because the pool of approved applicants far outnumbers the pool of denied applicants, it is difficult to find meaningful distinctions between the two groups.
+
+
+How are we to create an accurate, meaningful, predictve model when, +80% accuracy is achieved by merely predicting 'approved' for all new applications? Further, and more importantly, because the bulk of the data set deals with approved applications, we're working with very limited information with regard to denied applications (this might seem a trivial observation, but it is quite important, as trends apparent in the data set are, for the most part, merely trends in approved applications, and this can lead to, well, misleading results.) How are we to distinguish between two objects when one objects is, in relative terms, largely unknown? Of course, this conundrum is characteristic to classification problems, and logic more generally. 
+
+
+Anyhow, this kernel was largely inspired by Bukun, and even more so by Heads or Tails. Indeed, this kernel might best be considered the 'Variation on a Theme by Heads or Tails' -- more or less. 
+
+
+Finally, as a measure of accuracy, AUC is employed. 
+
+
+# Read in Data and Load Pertinent Libraries
+
+
+To begin, we load libraries pertinent to data manipulation and data visualization in R. Tidyverse contains a host of a tools useful for feature engineering and data cleansing. The car package has two uses: the first is for recoding inputs, and the second is for statistical analyses, as demonstrated below. Lubridate is useful for manipulating dates.
+
+```{r, warning = FALSE, message = FALSE}
+library(lubridate)
+library(tidyverse)
+library(car)
+```
+
+Having loaded preliminary libraries, we read in the first of our data sets. (Note that we will begin with two data sets for our initial analyses.) 
+
+```{r, message = FALSE}
+train = read_csv("train.csv")
+resources = read_csv("resources.csv")
+```
+
+Using 'glimpse' from the tidyverse, we can get a better feel for our data. (We begin with the data set entitled, 'train' and deal with 'resources' further below.) More specifically, we discover the data set we're dealing with is as interesting as it is varied: we have numerical inputs, no factors, and quite a few character vectors. Some of these variables need recoding. For example, teacher_prefix is listed as character vector when in fact it should be a factor. Again, we will deal with this below. 
+
+```{r}
+glimpse(train)
+```
+
+
+# Our First Data Manipulation 
+
+
+Most of the code here is relatively straightforward and again, constitutes variation on an existing theme. Of interest: prefixes like 'Mr.', 'Mrs.', and 'Ms.' were recoded as 'Male' and 'Female' ('M' and 'F'). Said recoding decreases cardinality. Of course, this is certainly not a problem in the case of teacher_prefix (as opposed to school_state); nonetheless, said encoding allows us to deal with this feature from a simpler, and therefore more meaningful, standpoint.
+
+
+```{r}
+train <- train %>%
+  mutate(teacher_id = as.factor(teacher_id),
+         teacher_prefix = as.factor(teacher_prefix),
+         school_state = as.factor(school_state),
+         project_submitted_datetime = ymd_hms(project_submitted_datetime),
+         day = ymd(str_sub(as.character(project_submitted_datetime),1,10)),
+         project_grade_category = as.factor(project_grade_category),
+         project_grade_category = fct_relevel(project_grade_category, "Grades PreK-2", after = 0),
+         project_subject_categories = as.factor(project_subject_categories),  
+         project_subject_subcategories = as.factor(project_subject_subcategories),
+         project_is_approved = as.logical(project_is_approved),
+         sex = recode(teacher_prefix, 
+                      "'Mr.'='M'; 'Mrs.'='F'; 'Ms.'='F'; 'Teacher'='F'; 'Dr.'='F'"),
+         previous_projects=as.numeric(teacher_number_of_previously_posted_projects))
+```
+
+We continue with our initial data manipulations. Of interest: we engineer two new features, 'Experience', and 'special_needs_and_interdisciplinary'. 'Experience' pertains to whether or not teachers have previously submitted proposals for funding. As seen in the chunk below, 'Novice' is a 1st time applicant, 'Beginner' is a 2nd time applicant, and 'Experienced' is an applicant who has applied for funding more than once. These thresholds were created as a means to the end of pooling applicants based on previous applications. In brief, it was thought that Experienced applicants -- that is, applicants who have applied more than once in the past -- would have a higher likelihood of approval than those applicants who had never previously applied. 
+
+
+
+The feature 'special_needs_and_interdisciplinary' gets at the following: some of the applications were interdisciplinary in nature (for example, some applications requested funding for projects that hybridized science and mathematics). Other projects were uni-disciplinary in nature; and finally, a porportion of the projects were related to special needs instruction. In the 'Significance Testing' section below, it is seen that these groups are in fact significant predictors of approval, and therefore, it would seem reasonable that they are included in our model.
+ 
+
+```{r, warning=FALSE}
+train <- train %>%
+  mutate(
+         experience = recode(previous_projects, 
+         "c(0)='Novice'; 
+         c(1)='Beginner';
+         else='Experienced'"),
+         specialneeds = str_detect(project_subject_categories,"Special Needs"),
+         specialneeds = as.numeric(specialneeds),
+         interdisciplinary = str_detect(project_subject_categories, ", "),
+         interdisciplinary = as.numeric(interdisciplinary),
+         special_needs_and_inter = specialneeds + interdisciplinary,
+         special_needs_and_interdisciplinary = 
+           recode(special_needs_and_inter, 
+                  "c(0)='Uni-Disciplinary'; 
+                  c(1)='Interdisciplinary Studies'; 
+                  else='Special Needs'"),
+         specialneeds=NULL,
+         interdisciplinary=NULL,
+         special_needs_and_inter=NULL)
+```
+
+Below are yet more data manipulations. These are relatively straightforward. In brief, the date in the data frame is of the following format: for example, December 1st 2017 reads as 12-01-2017. From this, we extract the day of the week the application was submitted, along with the month of the year, to see if weekday or month had any effect on the likelihood of approval. Prelminary significance testing suggests that these features are well worth including, as they are statistcially significant when controlling for other features. 
+
+
+```{r}
+train$weekday = weekdays(train$project_submitted_datetime)
+train$monthname = 
+  month(train$project_submitted_datetime, label = FALSE, abbr = FALSE)
+train$weekday = as.factor(train$weekday)
+train$monthname = as.factor(train$monthname)
+train$year = year(train$project_submitted_datetime)
+train$year = as.factor(train$year)
+```
+
+
+# Visualizing the Data
+
+
+Our first visualization shows the frequency of submission as it relates to time of year. Notice that there are spikes in the rate of submission near the end of the summer (or the beginning of the school year), and around Spring Break. This makes intuitive sense: teachers have more free time during these periods; further, they are likely preparing for upcoming instructional modules. 
+
+
+```{r, fig.align = 'center'}
+p1 <- train %>%
+  count(day) %>%
+  ggplot(aes(day, n)) +
+  geom_line(col = "darkblue") +
+  labs(x = "Date", y = "Submitted Proposals", 
+       title = "Submission Date and Count",
+       subtitle = "Irrespective of Acceptance")
+p1
+```
+
+# Continued Data Manipulations and Plotting
+
+
+Here, we subset our data into two sections: (1) applications approved and (2) applications denied. We then plot the disparate data sets to get a better feel for the rate of submission as it relates to approval and denial.
+
+
+```{r}
+train$project_is_approved=as.numeric(train$project_is_approved)
+
+applications_approved = filter(train, project_is_approved > 0)
+applications_denied = filter(train, project_is_approved < 1)  
+```
+
+Our first plot deals with approved applications, exclusively. Note that spikes in rate of submission for approved projects maps neatly onto the overall rate of submission, as seen above, prior to our partitioning. This is undoubtedly due to the imbalanced nature of the data set: in other words, the large majority of applications were approved; therefore, approved applications drive most trends in the data. This is important to note, as it is a difficulty that must be dealt with at some point. The 'To Do' of all 'To Dos'.
+
+
+```{r, fig.align = 'center'}
+p2 <- applications_approved %>%
+  count(day) %>%
+  ggplot(aes(day, n)) +
+  geom_line(col = "darkred", alpha = 0.8) + 
+  labs(x = "Date", y = "Accepted Proposals",
+       title = "Submission Date and Count",
+       subtitle = "Accepted")
+
+p2
+```
+
+Below we plot denied applications in the foreground in blue, and accepted applications in the background in red. Note that spikes in frequency of submission are much less pronounced for denied applications. 
+
+
+```{r, fig.align = 'center', warning=FALSE}
+p3 <- applications_denied %>%
+  count(day) %>%
+  ggplot(aes(day, n)) +
+  geom_line(col = "darkblue", alpha = 0.8) +
+  labs(x = "Date", y = "Denied Proposals",
+       title = "Submission Date and Count",
+       subtitle = "Denied")
+
+z = 
+  applications_approved %>%
+  count(day)
+
+p4 = p3 + 
+  geom_line(data = z, aes(z$day, z$n),col = "darkred", alpha = 0.4) + 
+  labs(x = "Date", y = "Proposals: Denied and Accepted",
+       title = "Submission Date and Count",
+       subtitle = "Denied (Blue) Over Accepted (Red)")
+p4
+```
+
+```{r, echo=FALSE}
+#-- now we add out multiplot function from R CookBook
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+A hidden code chunk exists immediately above -- one used for the visualizations below; that is, below you will find a matrixed representation of the visualizations presented above. Though redundant, I thought to include it for purposes purely aesthetic. The code chunk can be found in the R CookBook (the multiplot function), or in the code section of this kernel (see below).
+
+```{r, fig.align = 'center'}
+layout <- matrix(c(1,2,3,3),2,2,byrow=TRUE)
+
+multiplot(p1, p2, p4, layout=layout)
+```
+
+# Continued Visualizations
+
+We continue with multi-colored visualizations, first focusing on submissions per state. Note that the rate of submission per California and New York far exceeds the rate of submission per other states. This is interesting, particularly with regard to the rate of submission for California, and it is worth continued investigation. 
+
+```{r, fig.align = 'center'}
+state_and_previous_projects = 
+  train%>%
+  select(previous_projects, school_state) 
+
+p5 = ggplot(data=state_and_previous_projects, 
+       aes(school_state, previous_projects, fill = school_state)) + 
+  geom_col() +
+  theme(legend.position = "none",  axis.text.x  = element_text(angle=60, hjust=1, vjust=0.9)) +
+  labs(x = "State", y = "Frequency of Submissions",
+       title = "Frequency of Submissions by State")
+p5
+```
+
+Below: a visualization of the frequency of submission as it pertains to the engineered feature, 'sex'. Interestingly, the rate of submission for females far exceeds the rate of submission for males, and the feature is statistically significant in terms of likelihood of approval (please refer to the section titled, 'Significance Testing' below for greater detail.) Similarly, state of submission is a significant predictor of approval. 
+
+```{r, fig.align = 'center'}
+p6 = ggplot(data = train, aes(x = sex)) +  
+  geom_bar(fill = "darkblue") +
+  theme(legend.position = "none",  axis.text.x  = element_text(angle=60, hjust=1, vjust=0.9)) + 
+  labs (y = "Count", x = "Sex",
+        title = "Count of Submissions by Female and Male",
+        subtitle= "Archaic Categorization")
+p6
+```
+
+Below is yet another visualization, but this visualization deals with the engineered feature 'Experience' as it relates to frequency of submission. We see a disporportionate amount of applicants have applied for funding from Donors Choose previously.
+
+```{r, fig.align = 'center'}
+p7 = ggplot(data = train, aes(x = experience)) +
+  geom_bar(fill = "darkred") +
+  theme(legend.position = "none",  axis.text.x  = element_text(angle=60, hjust=1, vjust=0.9)) + 
+  labs (y = "Count", x = "Experience",
+        title = "Count of Submissions by Experience",
+        subtitle= "A Feature, Engineered")
+
+p7
+```
+
+Below are continued data manipulations. Various features are removed due to redundancy. For example, the information contained in teacher_prefix (i.e., Mr., Ms., etc.) is contained in the engineered feature, 'sex'. Accordingly, we drop the 'teacher_prefix' feature.
+
+
+```{r}
+train <- train %>%
+  mutate(teacher_prefix = NULL,
+         teacher_number_of_previously_posted_projects=NULL, #-- as previous projects
+         project_submitted_datetime=NULL, #-- not necessary now that we have our date
+         X=NULL, #-- not informative
+         teacher_id=NULL, 
+         experience = as.factor(experience),
+         special_needs_and_interdisciplinary=as.factor(special_needs_and_interdisciplinary),
+         project_is_approved=as.logical(project_is_approved))
+```
+
+Below is yet another feature, engineered.  The logic undergirding the engineering is as follows: many of the 'project_subject_categories' are two-tiered; for example, a teacher might submit an application for 'Math and Science: Applied Learning'. Said two-tiered structuring results in high cardinality and redundancy. The feature engineering below attempts to remove the redundancy, reduce cardinality, while retaining pertinent information. Signficance testing below suggests that indeed these features may potentially improve predictive power. 
+
+```{r, warning=FALSE}
+train <- train %>%
+  mutate(subject_numbered = as.numeric(project_subject_categories),
+         subject_broad = recode(subject_numbered, 
+                                "c(1, 2, 3, 4, 5, 6, 7)='Applied Learning'; 
+                                  c(8, 9, 10, 11, 12, 13)='Health Sports'; 
+                                  c(14, 15, 16, 17, 18, 19)='History Civics';
+                                  c(20, 21, 22, 23, 24, 25)='Literacy and Language';
+                                  c(26, 27, 28, 29, 30, 31, 32)='Math and Science';
+                                  c(33, 34)='Music and Art';
+                                  c(35, 36)='Special Needs';
+                                  else='Warmth Care Hunger'"),
+         subject_broad=as.factor(subject_broad))
+train <- train %>%
+  mutate(subject_numbered = NULL)
+
+```
+
+Below is a technicolor visualization of the feature engineered above. 
+
+```{r, fig.align = 'center'}
+subject_broad_and_previous_projects = 
+  train%>%
+  select(subject_broad, previous_projects) 
+
+p8 = ggplot(data = subject_broad_and_previous_projects) +
+  geom_col(aes(x = subject_broad, y= previous_projects, fill = subject_broad)) +
+  theme(legend.position = "none",  axis.text.x  = element_text(angle=60, hjust=1, vjust=0.9)) + 
+  labs (y = "Count", x = "Broad Subject",
+        title = "Count of Submissions by Broad Subject",
+        subtitle= "A Feature, Engineered")
+
+p8
+
+```
+
+# Significance Testing
+
+For predictive modeling, significance testing of the sort found directly below will likely seem trivial, superfluous, even silly. To my mind, significance testing can be used to assess whether or not the features engineered above, on a very basic level, have the potential to improve model performance. In short, a significant test statistic (p < 0.05) suggests the following: we are on the right track, and we would do well in including the feature, as it will perhaps improve model performance. Of course, this is no guarentee: increasing features often runs amok of significance tests, and, as can be seen below, the models are simple in the extreme. (They are used chiefly to get a fingertip feel for  feature importance, as it were.) 
+
+
+Below are a few tests assessing the significance of the features engineered above. Note: I have refrained from outputting coefficients and exponeniated coefficients aside from the first test. They are not germaine to the sort of predictive modeling that is the aim of this project. Nonetheless, as seen immediately below, due to their simplicity, these models are extremely interpretable, and for this reason, have strengths other models do not. 
+
+```{r}
+fit_broad_subject_category = 
+  glm(project_is_approved ~ subject_broad, 
+      data = train, 
+      family = binomial)
+
+
+Anova(fit_broad_subject_category, type = 3, test.statistic = "F")
+summary(fit_broad_subject_category)
+exp(coef(fit_broad_subject_category))
+```
+
+From the results immediately above, we see that many of the categories created are in fact significant predictors of project approval. But again, this model is so simple as to almost be useless for the purposes of prediction within the context of this project. That being said, if we were interested in examining 'Broad Subject Cateogry' as a fixed effect, we could undoubtedly make an argument otherwise. More specifcally, we could claim that submitting an application under the heading 'Literacy and Language', for example, increases the likelihood of application approval by a factor of 43%. In all, the significance test suggests that this feature will perhaps improve the accuracy of our model in terms of AUC. We continue with a few more significance tests, only to ascertain whether it would seem reasonable to include the features in our models below.
+
+```{r}
+fit_sex = 
+  glm(project_is_approved ~ sex, 
+      data = train, 
+      family = binomial)
+
+Anova(fit_sex, type = 3, test.statistic = "F")
+
+fit_experience = 
+  glm(project_is_approved ~ experience, 
+      data = train, 
+      family = binomial)
+
+Anova(fit_experience, type = 3, test.statistic = "F")
+
+
+fit_special_needs = 
+  glm(project_is_approved ~ special_needs_and_interdisciplinary, 
+      data = train, 
+      family = binomial)
+
+Anova(fit_special_needs, type = 3, test.statistic = "F")
+
+fit_weekday = 
+  glm(project_is_approved ~ weekday, 
+      data = train, 
+      family = binomial)
+
+Anova(fit_weekday, type = 3)
+
+fit_month = 
+  glm(project_is_approved ~ monthname, 
+      data = train, 
+      family = binomial)
+
+Anova(fit_month, type = 3, test.statistic = "F")
+```
+
+The results above indicate that experience, monthname, special_needs_and_interdisciplinary, and sex are significant predictors of project approval. 
+
+
+# Continued Feature Engineering, and the Resources Data Set
+
+
+Before turning our attention to the data set 'resources', we conduct a few more manipulations. Due to high cardinality of features 'project_subject_categories' and 'school_state', we carry out a bit of target encoding. We then proceed with the 'resources' data set. As seen below, many other features are created from that data set, and many of these were inspired by Bukun. These features are then joined to the 'train' data set, at which point we do a bit of language processing before modeling. 
+
+
+```{r, warning = FALSE}
+
+# -- 1. Target Encode Project SubCategory, Mean
+subcategory_average = train %>%
+  group_by(project_subject_subcategories) %>%
+  dplyr::summarise(SubcategoryAverage = mean(project_is_approved))
+
+# -- 2. Join New Feature to Train Data Set 
+train = 
+  left_join(train,subcategory_average %>% 
+              select (SubcategoryAverage, 
+                      project_subject_subcategories),by="project_subject_subcategories")
+
+# -- 3. Target Encode Project SubCategory, Standard Deviation
+subcategory_sd = train %>%
+  group_by(project_subject_subcategories) %>%
+  dplyr::summarise(SubcategorySD = sd(project_is_approved))
+
+# -- 4. Join New Feature to Train Data Set 
+train = 
+  left_join(train,subcategory_sd %>% 
+              select (SubcategorySD, 
+                      project_subject_subcategories),by="project_subject_subcategories")
+
+# -- 5. Target Encode school_state, mean
+state_average = train %>%
+  group_by(school_state) %>%
+  dplyr::summarise(StateAverage = mean(project_is_approved))
+
+# -- 6. Join New Feature to Train Data Set
+train = 
+  left_join(train,state_average %>% 
+              select (StateAverage, school_state),by="school_state")
+
+# -- 7. Create Total Amount Variable
+resources = resources %>% 
+  mutate(TotalAmount = (quantity*price))
+
+# -- 8. Create New Feature and Join to Train Data Set
+resources2 = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(TotalAmountPerID = sum(TotalAmount))
+
+train = 
+  left_join(train,resources2 %>% 
+              select(TotalAmountPerID,id),by = "id")
+
+# -- 9. Create New Feature and Join to Train Data Set
+resources_median_amount = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(MedianAmount = median(TotalAmount))
+
+train = 
+  left_join(train,resources_median_amount %>% 
+              select(MedianAmount,id),by = "id")
+
+# -- 10. Create New Feature and Join to Train Data Set
+resources_min_total = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(MinTotal = min(TotalAmount))
+
+train = 
+  left_join(train,resources_min_total %>% 
+              select(MinTotal,id),by = "id")
+
+# -- 11. Create New Feature and Join to Train Data Set
+resources_max_total = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(MaxTotal = max(TotalAmount))
+
+train = 
+  left_join(train,resources_max_total %>% 
+              select(MaxTotal,id),by = "id")
+
+# -- 12. Create New Feature and Join to Train Data Set
+resources_quantity = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(TotalQty = sum(quantity))
+
+train = 
+  left_join(train,resources_quantity %>% 
+              select(TotalQty,id),by = "id")
+
+# -- 13. Create New Feature and Join to Train Data Set
+resources_count = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(CountItems = n())
+
+
+train = 
+  left_join(train,resources_count %>% 
+              select(CountItems,id),by = "id")
+
+# -- 14. Create New Feature and Join to Train Data Set
+resources_max_price = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(MaxPrice = max(price))
+
+train = 
+  left_join(train,resources_max_price %>% 
+              select(MaxPrice,id),by = "id")
+
+# -- 15. Create New Feature and Join to Train Data Set
+resources_mean_price = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(MeanPrice = mean(price))
+
+train = 
+  left_join(train,resources_mean_price %>% 
+              select(MeanPrice,id),by = "id")
+
+# -- 16. Create New Feature and Join to Train Data Set
+resources_min_price = resources %>% 
+  group_by(id) %>%
+  dplyr::summarise(MinPrice = min(price))
+
+train = 
+  left_join(train,resources_min_price %>% 
+              select(MinPrice,id),by = "id")
+
+# -- 17. Add Project Description to Train Data Set
+project_description = resources %>%
+  group_by(description) %>%
+  dplyr::select(description, id)
+
+train = 
+  left_join(train,project_description, by = "id")
+```
+
+
+Some might wonder the wisdom of engineering myriad features. As seen below, quite a few have near zero variance and for this reason, do not improve predictive power. But again, because we are dealing with a highly imbalanced target variable -- because the group of approved applications far outnumbers the group of denied applications -- at this point -- that is, prior to having conducted significance tests -- it would seem reasonable to engineer as many features as possible. Our criterion for engineering: there is a vanishingly small chance the feature may help us cleave one group from the other. (Admittedly, this criterion is open to debate and might strike some as far too lax.) For example, perhaps the total amount of funding requested for a project denied is significantly different from the total amount of funding requested for a project approved. Accordingly, total amount requested would seem an important feature to include.
+
+Anyhow, we now take a quick glimpse at our data set to see what we're working with, and to make sure that everything looks okay. 
+
+```{r}
+glimpse(train)
+```
+
+Everything looks okay. The only thing we might consider doing is dropping Essay 3 and Essay 4. They have too many NA values to be useful at this point -- at least to my mind they do. Below, we see that 96% of both columns are blank.
+
+```{r}
+a = sum(is.na(train$project_essay_3))
+b = sum(!is.na(train$project_essay_3))
+porportion_na_3 = a/(b+a)
+100*(porportion_na_3)
+
+d = sum(is.na(train$project_essay_4))
+e = sum(!is.na(train$project_essay_4))
+porportion_na_4 = d/(d+e)
+100*(porportion_na_4)
+```
+
+We drop the columns and again glimpse our data to see that we're all set. 
+```{r}
+train = train %>%
+  select(-project_essay_4, -project_essay_3)
+glimpse(train)
+```
+
+
+# Language Processing
+
+As indicated above, some of the inputs, like project_essay_1, are character vectors. In fact, they contain short responses to prompts. Below, we engineer yet more features, ones that tabulate word count, for example. Because our word count function is computationally intensive, we conduct word counts on a sample of our data. We then conduct significance testing and use those results to guide development of relevant features.  
+
+
+```{r, echo=FALSE}
+trainingwheelz = sample_n(train, 10000)
+```
+
+
+```{r}
+trainingwheelz = trainingwheelz%>%
+  mutate(project_title_word_count = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           trainingwheelz$project_title), 
+                  function(x) sum(x > 0)),
+         essay_1_wordcount = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           trainingwheelz$project_essay_1), 
+                  function(x) sum(x > 0)),
+         essay_2_wordcount = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           trainingwheelz$project_essay_2), 
+                  function(x) sum(x > 0)),
+         project_resource_summary_wordcount = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           trainingwheelz$project_resource_summary), 
+                  function(x) sum(x > 0)),
+         project_description_count = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           trainingwheelz$description), 
+                  function(x) sum(x > 0)))
+```
+
+# Significance Testing: Word Count
+
+```{r}
+fit_overall_model = glm(project_is_approved ~ 
+                          essay_1_wordcount + 
+                          essay_2_wordcount + 
+                          project_title_word_count + 
+                          project_resource_summary_wordcount +
+                          project_description_count,
+                        data = trainingwheelz, 
+                        family = binomial)
+
+Anova(fit_overall_model, type = 3, test.statistic = "F")
+```
+
+Here, we engineer new features for the 'train' data set in its partiality 
+
+```{r, echo=FALSE}
+train = sample_n(train, 30000)
+```
+
+
+```{r}
+train = train %>%
+  mutate(essay_2_wordcount = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           train$project_essay_2), 
+                  function(x) sum(x > 0)),
+         essay_1_wordcount = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           train$project_essay_1), 
+                  function(x) sum(x > 0)),
+        project_title_word_count = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           train$project_title), 
+                  function(x) sum(x > 0)),
+         project_resource_summary_wordcount = 
+           sapply(gregexpr("[[:alpha:]]+", 
+                           train$project_resource_summary), 
+                  function(x) sum(x > 0)))
+```
+
+```{r}
+glimpse(train)
+```
+
+# Continued Language Processing: Word Clouds and More
+
+We now load libraries useful for textual analysis. Note that the analysis below is very rudimentary, and a more thorough textual analysis will be conducted near the close of this project, as it is more directly related to predictive modeling (i.e., tf idf.) Again, we use a sample from our data set because the method employed below is computationally intensive. Also, it is important to note that the example below only deals with the feature 'project_resource_summary,' but the method can easily be extended to other character features (i.e., project_essay_1, etc.) as I have done, and as is apparent below.
+
+
+```{r, echo=FALSE}
+z = sample_n(train, 10000)
+```
+
+```{r, message = FALSE}
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(wordcloud2)
+library(ggplot2)
+library(tidytext)
+library(reshape)
+```
+
+Note that the data below is again partitioned by approval. As will be seen, this analysis results in word frequency distributions unique to each group. Keywords -- those that distinguish successful applications from unsuccessful applications -- will then be used to engineer yet more features. 
+
+```{r}
+applications_approved = filter(z, project_is_approved > 0)
+
+app_resources_requested_approved=applications_approved$project_resource_summary
+app_resources_requested_approved=as.character(app_resources_requested_approved)
+
+app_resources_requested_approved_text <- VectorSource(app_resources_requested_approved)
+corpus <- VCorpus(app_resources_requested_approved_text)
+
+docs = corpus
+
+docs <- tm_map(docs,removePunctuation)
+
+for (j in seq(docs)) {
+  docs[[j]] <- gsub("/", " ", docs[[j]])
+  docs[[j]] <- gsub("@", " ", docs[[j]])
+  docs[[j]] <- gsub("\\|", " ", docs[[j]])
+  docs[[j]] <- gsub("\u2028", " ", docs[[j]])
+}
+
+docs <- tm_map(docs, removeNumbers)
+docs <- tm_map(docs, tolower)
+docs <- tm_map(docs, PlainTextDocument)
+docs <- tm_map(docs, removeWords, stopwords("english") )
+
+docs <- tm_map(docs, stripWhitespace)
+docs <- tm_map(docs, PlainTextDocument)
+
+dtm1 <- DocumentTermMatrix(docs)
+
+freq <- colSums(as.matrix(dtm1)) 
+freq <- sort(colSums(as.matrix(dtm1)), decreasing=TRUE) 
+
+project_summary_approved_keywords <- data.frame(word=names(freq), freq=freq)
+```
+
+Below is a textual analysis of denied applications.
+
+```{r, message = FALSE}
+applications_denied = filter(z, project_is_approved < 1)
+
+app_resources_requested_denied=applications_denied$project_resource_summary
+app_resources_requested_denied=as.character(app_resources_requested_denied)
+
+app_resources_requested_denied_text <- VectorSource(app_resources_requested_denied)
+corpus <- VCorpus(app_resources_requested_denied_text)
+
+docs = corpus
+
+docs <- tm_map(docs,removePunctuation)
+
+for (j in seq(docs)) {
+  docs[[j]] <- gsub("/", " ", docs[[j]])
+  docs[[j]] <- gsub("@", " ", docs[[j]])
+  docs[[j]] <- gsub("\\|", " ", docs[[j]])
+  docs[[j]] <- gsub("\u2028", " ", docs[[j]])
+}
+
+docs <- tm_map(docs, removeNumbers)
+docs <- tm_map(docs, tolower)
+docs <- tm_map(docs, PlainTextDocument)
+docs <- tm_map(docs, removeWords, stopwords("english") )
+
+docs <- tm_map(docs, stripWhitespace)
+docs <- tm_map(docs, PlainTextDocument)
+
+dtm <- DocumentTermMatrix(docs)
+
+freq <- colSums(as.matrix(dtm)) 
+
+freq <- sort(colSums(as.matrix(dtm)), decreasing=TRUE) 
+project_summary_denied_keywords <- data.frame(word=names(freq), freq=freq) 
+```
+
+We remove the two terms with highest frequency, as they are uninstructive and common to both groups, projects approved and denied.
+
+```{r}
+project_summary_approved_keywords=project_summary_approved_keywords[-1,]
+project_summary_approved_keywords=project_summary_approved_keywords[-1,]
+```
+
+# Visualization of the Textual Data
+
+Below is a visualization of word frequency, from projects approved. Note that these are the words most commonly used in successful applications, with regard to project_resource_summary.  
+
+```{r, fig.align = 'center'}
+p <- ggplot(subset(project_summary_approved_keywords, freq>300), 
+            aes(x = reorder(word, -freq), y = freq, fill = freq)) +
+  geom_bar(stat = "identity") + 
+  labs(title="Word Frequency Analysis",
+       subtitle= "Keyword Analysis: Approved") + 
+  labs(x = NULL, y = NULL, fill= "Frequency") + 
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.text.x = element_text(angle = 90))
+p
+```
+
+Again, we remove the two terms with the highest frequency, as they are uninstructive and common to both groups, approved and denied.
+
+```{r, fig.align = 'center'}
+project_summary_denied_keywords=project_summary_denied_keywords[-1,]
+project_summary_denied_keywords=project_summary_denied_keywords[-1,]
+```
+
+Below is yet another visualization of word frequency, but from projects denied. Note that these are the words most commonly employed in unsuccessful applications, with regard to project_resource_summary.  
+
+```{r, fig.align = 'center'}
+p <- ggplot(subset(project_summary_denied_keywords, freq>100), 
+            aes(x = reorder(word, -freq), y = freq, fill = freq)) +
+  geom_bar(stat = "identity") + 
+  labs(title="Word Frequency Analysis",
+       subtitle= "Keyword Analysis: Denied") + 
+  labs(x = NULL, y = NULL, fill= "Frequency") + 
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.text.x = element_text(angle = 90))
+p
+```
+
+Here we use the arsenal package to tabulate the keywords unique to each group. 
+
+```{r, message=FALSE}
+#-- arsenal for keyword comparison
+library(arsenal)
+
+top_40_project_summary_denied_keywords = head(project_summary_denied_keywords, 40)
+top_40_project_summary_denied_keywords = top_40_project_summary_denied_keywords %>%
+  select(word)
+
+top_40_project_summary_approved_keywords = head(project_summary_approved_keywords, 40)
+top_40_project_summary_approved_keywords = top_40_project_summary_approved_keywords %>% 
+  select(word)
+
+obj = summary(comparedf(top_40_project_summary_denied_keywords, 
+                        top_40_project_summary_approved_keywords, by = "word"))
+
+y = obj$obs.table
+y
+```
+
+Below is a word cloud for approved projects. 
+
+```{r, fig.align = 'center'}
+set.seed(1234)
+wordcloud(words = project_summary_approved_keywords$word, freq = project_summary_approved_keywords$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35,
+          colors=brewer.pal(8, "Dark2"))
+```
+
+Below is yet another word cloud, but for denied projects. Viewed in conjuction with the word cloud for approved projects, it is clear that approved projects and denied projects contain different keywords. This observation allows us to engineer yet more features, as seen below. 
+
+
+```{r, fig.align = 'center', warning=FALSE}
+wordcloud(words = project_summary_denied_keywords$word, freq = project_summary_denied_keywords$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35,
+          colors=brewer.pal(8, "Dark2"))
+```
+
+# Topic Modeling, Briefly
+
+Continued below is a brief look at topic modeling. Essentially, we want to differentiate themes or topics implicit to, in this case, the project_resource_summary feature. The assumption driving this analysis: that groupings exist of which we are currently unaware. For example, maybe many teachers are concered with securing funding to purchase new technologies; perhaps other teachers are concered with funding for field trips. We can use these groupings, once discovered, to partition and further analyze our data. Said groupings, it is thought, are potentially more meaningful than other, somewhat more arbitrary groupings, like geographcial location. Whatever the case may be, topic modeling will likely help us better understand our data. 
+
+We load libraries, use document term matrices from above, and plot results. A great online resource can be found [here](https://www.tidytextmining.com/topicmodeling.html) if you're interested in learning more.
+
+```{r}
+library(topicmodels)
+```
+
+```{r}
+topics_lda <- LDA(dtm, k = 8, control = list(seed = 1234))
+typical_topics <- tidy(topics_lda, matrix = "beta")
+```
+
+```{r}
+top_terms <- typical_topics %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered() 
+```
+
+As it stands, our topic modeling analyses would appear somewhat anti-climactic and uninstructive: the groupings are far too similiar to be useful. Bummer. (I plan to revisit this and expand.)
+
+# Keyword Count/Relevancy Score
+
+Prior to predictive modeling, we create the last of our features: critical keyword counts. As alluded to above, the arsenal package (note that this package causes Kaggle to throw a fit) allows us to compare data frames in terms of uniqueness. Accordingly, we compare word frequency for project approved and denied. We are left with a new data frame, one including high use terms exclusive to approval and denial. We then use the word count function, as seen below, to count each keyword and derive a cumuluative relevancy score. It is undoubtedly inelegant, cumbersome code, but it gets the job done, if slowly. (I plan to revisit and refine this...)
+
+```{r}
+train = train%>%
+  mutate(keyword1_project_resource_summary = sapply(gregexpr("able", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword2_project_resource_summary = sapply(gregexpr("art", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword3_project_resource_summary = sapply(gregexpr("equipment", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword4_project_resource_summary = sapply(gregexpr("games", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword5_project_resource_summary = sapply(gregexpr("hands", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword6_project_resource_summary = sapply(gregexpr("items", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword7_project_resource_summary = sapply(gregexpr("options", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword8_project_resource_summary = sapply(gregexpr("projects", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword9_project_resource_summary = sapply(gregexpr("stem", 
+                                                             train$project_resource_summary), 
+                                                    function(x) sum(x > 0)),
+         keyword10_project_resource_summary = sapply(gregexpr("variety", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword11_project_resource_summary = sapply(gregexpr("balls", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword12_project_resource_summary = sapply(gregexpr("chromebooks", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword13_project_resource_summary = sapply(gregexpr("headphones", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword14_project_resource_summary = sapply(gregexpr("ipad", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword15_project_resource_summary = sapply(gregexpr("keep", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword16_project_resource_summary = sapply(gregexpr("set", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword17_project_resource_summary = sapply(gregexpr("time", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         keyword18_project_resource_summary = sapply(gregexpr("wobble", 
+                                                              train$project_resource_summary), 
+                                                     function(x) sum(x > 0)),
+         
+         overall_relevancy_score_for_project_resource_summary1 = 
+           keyword1_project_resource_summary +
+           keyword2_project_resource_summary + 
+           keyword3_project_resource_summary + 
+           keyword4_project_resource_summary +
+           keyword5_project_resource_summary + 
+           keyword6_project_resource_summary + 
+           keyword7_project_resource_summary + 
+           keyword8_project_resource_summary +
+           keyword9_project_resource_summary + 
+           keyword10_project_resource_summary,
+         overall_relevancy_score_for_project_resource_summary2 = 
+           keyword11_project_resource_summary +
+           keyword12_project_resource_summary + 
+           keyword13_project_resource_summary + 
+           keyword14_project_resource_summary + 
+           keyword15_project_resource_summary + 
+           keyword16_project_resource_summary + 
+           keyword17_project_resource_summary + 
+           keyword18_project_resource_summary)
+```
+
+A bit of significance testing to round our analysis out.
+
+```{r}
+fit_resource_summary5 = glm(project_is_approved ~ 
+                              overall_relevancy_score_for_project_resource_summary1 + 
+                              overall_relevancy_score_for_project_resource_summary2,
+          data = train, family = binomial)
+Anova(fit_resource_summary5, type = 3, test.statistic = "F")
+```
+
+From the results above, it would seem that our relevancy score for the Project Resource Summary is a significant predictor of the likelihood of project approval, and for that reason, it may very well facilitate the development of more accurate models.
+
+We now turn to our relevancy score for Essay 2.
+
+```{r}
+train = train%>%
+  mutate(keyword1_count_essay_2 = sapply(gregexpr("activities", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword2_count_essay_2 = sapply(gregexpr("children", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword3_count_essay_2 = sapply(gregexpr("science", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword4_count_essay_2 = sapply(gregexpr("supplies", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword5_count_essay_2 = sapply(gregexpr("way", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword6_count_essay_2 = sapply(gregexpr("access", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword7_count_essay_2 = sapply(gregexpr("one", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword8_count_essay_2 = sapply(gregexpr("read", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword9_count_essay_2 = sapply(gregexpr("used", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         keyword10_count_essay_2 = sapply(gregexpr("using", 
+                                                  train$project_essay_2), 
+                                         function(x) sum(x > 0)),
+         overall_relevancy_score_for_project_essay_2 = 
+           keyword1_count_essay_2 +
+           keyword2_count_essay_2 + 
+           keyword3_count_essay_2 +
+           keyword4_count_essay_2 +
+           keyword5_count_essay_2,
+         overall_relevancy_score_for_project_essay_2.1 = 
+           keyword6_count_essay_2 +
+           keyword7_count_essay_2 +
+           keyword8_count_essay_2 + 
+           keyword9_count_essay_2 + 
+           keyword10_count_essay_2)
+```
+
+And a bit more significance testing.
+
+```{r}
+fit_project_essay_2.5 = glm(project_is_approved ~ 
+            overall_relevancy_score_for_project_essay_2 + 
+            overall_relevancy_score_for_project_essay_2.1,
+          data = train, family = binomial)
+Anova(fit_project_essay_2.5, type = 3, test.statistic = "F")
+```
+
+Again, from the results above, it would seem that our relevancy score for Essay 2 is a significant predictor of the likelihood of project approval, and for that reason, it may very well facilitate the development of more accurate models.
+
+Finally, we take another peek at our data to make sure it looks okay, and we create one last feature. Note that we are working with somewhat of a smallish sample of our data, but at this point, the aim of this kernel is to develop a baseline AUC score. In other words, becuase we want to reduce computing intensity, we're working with a smaller sample, developing a model we think might work, and then, when we're satisfied with our results, we can let loose on the data set in its entirety. There are many ways of going about this, and this just one approach, being rethought and reexamined as we knit. 
+
+```{r}
+category_average = train %>%
+  group_by(project_subject_categories) %>%
+  dplyr::summarise(CategoryAverage = mean(project_is_approved))
+
+train = left_join(train,category_average %>% 
+                    select (CategoryAverage, project_subject_categories),by="project_subject_categories")
+```
+
+
+# Predictive Modeling
+
+Now that we've completed our initial exploration, we continue with modeling to the end of establishing a baseline AUC. Subsequent to the establishment of a baseline, we will refine our model to the end of improving accuracy. First, we clean our data set, removing redundant features (i.e., school_state, project_grade_category, etc.).
+
+```{r}
+train = train %>%
+  select(-id,
+         -school_state,
+         -project_grade_category, 
+         -project_subject_categories,
+         -project_subject_subcategories,
+         -project_title,
+         -project_essay_1,
+         -project_essay_2,
+         -project_resource_summary,
+         -day)
+glimpse(train)
+```
+
+Everything looks okay, although the introduction of keyword count hints of a sparse matrix -- certainly a potential problem. As mentioned, once the model seems to perform optimally on our sample, we'll come back and give it a go on the entirety of the data set. Below we load the caret package for modeling and the pROC package for AUC analysis. We also load the caretEnsemble package, as it allows us to run more than one model at a time. Depending on model performance -- more specifically, depending how the models correlate -- we might think to ensemble the models to increase predictive performance. 
+
+```{r, message=FALSE}
+library(caret)
+library(pROC)
+```
+
+We now partition our data into training and testing sets. Note that because we're merely attempting to establish a baseline AUC, we'll jump right in, although preprocessing would be seem desireable. (We also need to set our target as a factor.)
+
+```{r, echo=FALSE}
+trainer = sample_n(train, 20000)
+```
+
+```{r}
+trainer = trainer %>%      
+  mutate(project_is_approved=as.factor(make.names(project_is_approved)))
+```
+
+Here we partition our data. 
+
+```{r}
+set.seed(3147)
+inTrain <- createDataPartition(y=trainer$project_is_approved,
+                               p=0.70, list=FALSE)
+training <- trainer[inTrain,]
+testing <- trainer[-inTrain,]
+```
+
+We set a few rules, and then we have at it.
+
+```{r message=FALSE, warning=FALSE}
+tcontrol <- trainControl(method = "cv", 
+                         number = 3, 
+                         index = createFolds(training$project_is_approved, 3), 
+                         savePredictions = "final", 
+                         verbose = FALSE,
+                         classProbs = TRUE,
+                         summaryFunction = twoClassSummary)
+
+set.seed(3147)
+first_model <- train(project_is_approved ~ 
+                      MedianAmount +
+                      essay_2_wordcount + 
+                      TotalAmountPerID +
+                      previous_projects +
+                      CountItems +
+                      keyword6_project_resource_summary +
+                      SubcategoryAverage +
+                      keyword9_count_essay_2 + 
+                      keyword4_count_essay_2 +
+                      StateAverage +
+                      
+                      keyword3_project_resource_summary +
+                      keyword8_count_essay_2 +
+                      keyword5_project_resource_summary + 
+                      keyword18_project_resource_summary + 
+                      project_title_word_count +
+                      keyword10_project_resource_summary +
+                      keyword13_project_resource_summary +
+                      essay_1_wordcount +
+                      CategoryAverage +
+                      
+                      keyword4_project_resource_summary + 
+                      project_resource_summary_wordcount +
+                      keyword6_count_essay_2 +
+                      keyword6_count_essay_2 +
+                      keyword2_count_essay_2 +
+                      MeanPrice +
+                      MaxPrice,
+                    data = training,
+                    na.action = na.omit,
+                    trControl = tcontrol,
+                    metric="ROC",
+                    method = "glm")
+```
+
+Below are the results of our first model.
+
+```{r}
+first_model
+```
+
+Here is a plot of feature importance. As suggested, many of the features we engineered seem to be working well. 
+
+```{r}
+ggplot(varImp(first_model))
+```
+
+Having thus run our first model, we now predict on our 'testing' partition. Below are the results.
+
+```{r}
+predictions <- predict(first_model, newdata=testing, type = "prob")
+
+pred = c(predictions)
+obs = c(testing$project_is_approved)
+
+compare = data.frame(pred,obs)
+```
+
+```{r, echo =FALSE}
+pred = as.numeric(as.character(unlist(pred[[1]])))
+pred = as.numeric(pred)
+```
+
+Below we see an AUC of 0.69. This is okay, not great. Perhpas if we use other models we can improve our baseline. 
+
+```{r, warning=FALSE, message=FALSE}
+set.seed(3147)
+roc(obs, pred, plot=TRUE)
+```
+
+# More Modeling
+
+Here we load libraries and fit various models at once. (Note the algorithmList.)
+
+```{r, message=FALSE}
+library(caretEnsemble)
+```
+
+```{r message=FALSE, warning=FALSE}
+traincontrol <- trainControl(method = "cv", 
+                             number = 3,
+                             index = createFolds(training$project_is_approved, 3), 
+                             savePredictions = "final", 
+                             verbose = FALSE,
+                             classProbs = TRUE,
+                             summaryFunction = twoClassSummary)
+
+algorithmList <- c('xgbTree', 'gbm', 'earth')
+```
+
+```{r message=FALSE, warning=FALSE}
+set.seed(3147)
+zero_stack <- caretList(project_is_approved ~ 
+                      MedianAmount +
+                      essay_2_wordcount + 
+                      TotalAmountPerID +
+                      previous_projects +
+                      CountItems +
+                      keyword6_project_resource_summary +
+                      SubcategoryAverage +
+                      keyword9_count_essay_2 + 
+                      keyword4_count_essay_2 +
+                      StateAverage +
+                      
+                      keyword3_project_resource_summary +
+                      keyword8_count_essay_2 +
+                      keyword5_project_resource_summary + 
+                      keyword18_project_resource_summary + 
+                      project_title_word_count +
+                      keyword10_project_resource_summary +
+                      keyword13_project_resource_summary +
+                      essay_1_wordcount +
+                      CategoryAverage +
+                      
+                      keyword4_project_resource_summary + 
+                      project_resource_summary_wordcount +
+                      keyword6_count_essay_2 +
+                      keyword6_count_essay_2 +
+                      keyword2_count_essay_2 +
+                      MeanPrice +
+                      MaxPrice,
+                    
+                    data = training,
+                    trControl = traincontrol,
+                    metric="ROC",
+                    methodList=algorithmList)
+```
+
+Our results.
+
+```{r}
+zero_stack_results <- resamples(zero_stack)
+summary(zero_stack_results)
+```
+
+# Visualization of Our Results
+
+```{r}
+scales <- list(x=list(relation="free"), y=list(relation="free"))
+bwplot(zero_stack_results, scales=scales)
+```
+
+And finally, we predict on our testing partition. 
+
+```{r}
+testing_prediction <- predict(zero_stack, newdata=testing)
+head(testing_prediction)
+
+pred = testing_prediction
+obs = testing$project_is_approved
+
+compare = data.frame(pred,obs)
+```
+
+```{r, message = FALSE}
+xgbTree_results = compare%>%
+  select(xgbTree, obs)
+
+pred=xgbTree_results$xgbTree
+obs=xgbTree_results$obs
+
+set.seed(3147)
+roc(obs, pred, plot=TRUE)
+```
+
+```{r, message = FALSE, warning = FALSE}
+gbm_results = compare%>%
+  select(gbm, obs)
+
+pred=gbm_results$gbm
+obs=gbm_results$obs
+
+set.seed(3147)
+roc(obs, pred, plot=TRUE)
+```
+
+```{r, warning=FALSE, message= FALSE}
+earth_results = compare%>%
+  select(earth, obs)
+
+pred=earth_results$earth
+obs=earth_results$obs
+
+set.seed(3147)
+roc(obs, pred, plot=TRUE)
+```
+
+# Model Correlations
+
+Because the models are so highly correlated, it doesn't quite make sense to build an ensemble. At this point, it would seem that the gbm model performs the best in terms of AUC (.72). We use this as a benchmark and will return at a later date to improve performance accuracy.
+
+```{r}
+mcr <-modelCor(zero_stack_results)
+print (mcr)
+```
