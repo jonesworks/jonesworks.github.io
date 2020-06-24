@@ -1,0 +1,189 @@
+---
+title: "Bouncer Tracker Preliminary Exploratory Data Analysis"
+output:
+  html_document:
+    code_folding: hide
+    fig_caption: yes
+    fig_height: 4.5
+    fig_width: 7
+    highlight: tango
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+  word_document:
+    toc: yes
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=F}
+knitr::opts_chunk$set(echo = T)
+```
+
+# Introduction 
+
+Welcome to a brief, preliminary overview of the data contained in Bouncer Tracker. 
+
+The aim of this analysis is two-fold: first, to establish the coding chunks necesssary to conduct a more thorough analysis at a later date. Second, to begin parsing and analyzing  data to the end of discovering  trends. 
+
+Questions examined include: 
+
+  - what is the relationship between event duration and the number attendees monitored and kicked? 
+  - what is the relationship between the count of bouncers and the number of attendees monitored and kicked?
+  - what is the relationship between an event's start time and the number of attendees monitored and kicked?
+  
+Answering these questions might help us better anticipate the need for bouncers per event type, size, duration, and start time. 
+
+Importantly, the data frame titled 'Bouncer Tracker' is incomplete -- that is, it lacks crucial data to conduct a truly meaningful analysis to the end of discovering actionable insights and answering the questions above. 
+
+As such, the aim of this analysis was also to help us better understand the kind of data we might need in order to provide better insights and action plans to interested parties. 
+
+Having completed the introductory remarks to this overview, let's turn to data analysis. 
+
+What follows is:
+
+  - tidying of the data and feature engineering.
+  - data visualization of descriptive statistics.
+  - analysis of data for trends. 
+
+# Tidying the Data and Introducing Requisite Libraries
+
+```{r foo1, fig.align = 'center', message=F, warning=F}
+# Load Libraries
+library(lubridate)
+library(tidyverse)
+library(car)
+
+#Read in Data
+train = read.csv("Bouncer.Tracker6.csv")
+```
+
+# Data Tidying
+
+Below is a small snippet of code that speaks to the kind of data tidying completed prior to the construction of this Markdown document. Much of the tidying (recoding variables, numericizing variables, etc.) was completed elsewhere, and neither useful nor instructive for the purposes of this analysis. Accordingly, only a small snippet is provided, along with a glimpse of the data. 
+
+The glimpse() function, contained in the tidyverse (a library of functions in R), offers analysts a general overview of a given data frame's structure. 
+
+```{r foo2, fig.align = 'center', message=F, warning=F}
+# Let us tidy! And also get a glimpse. 
+train = train %>%
+  mutate(date=as.Date(date),
+         event.name=as.character(event.name),
+         start.time=as.Date(start.time),
+         end.time=as.Date(end.time),
+         notes=as.character(notes),
+         day=as.Date(day),
+         multiple_bouncers=as.factor(multiple_bouncers))
+glimpse(train)
+```
+
+# Feature Engineering
+
+Again, much of the coding necessary for the feature engineering completed for this preliminary analysis is not germaine to this report. Accordingly, a brief list of the features engineered should suffice. 
+
+The features summarized below were designed to the end of improving predictive power, and facilitating the discovery of latent trends in the data frame.  
+
+  - multiple_bouncers: whether one or many bouncers were used for the events.
+  - event duration: length of event in seconds.
+  - porportion_kicked_from_total: percentage of kicked attendees.
+  - porpotion_monitored_from_total: percentage of monitored attendees.
+  - event.categories: events were partitioned into three main categories (sports, music/public events, and museum/aquarium).
+
+# First Visualizations
+
+Below are a few visualizations that provide a general overview of the data's structure. They offer what might be considered a fingertip feel for the data. All can be categorized as decriptive statistics. For signficance testing, please view below. 
+
+First, we have a bar chart dealing with a late start time: this is any start time that falls after 9pm. As we can see, most of the events start early. In itself, this is a trivial observation, but this feature, engineered for the purposes of this report, might improve predictve accuracy. Please note that the chart belows serves as an example of the kind of visualization that is instructive in facilitating a fingertip feel for the data. It speaks to the data's structure in general, and gives us clues about what kind of analysis we conduct moving forward. 
+
+```{r foo3, fig.align = 'center', message=F, warning=F, echo=FALSE}
+p1 = ggplot(data = train, aes(x = start.time.late)) +  
+  geom_bar(fill = "darkblue") +
+  theme(legend.position = "none",  axis.text.x  = element_text(angle=60, hjust=1, vjust=0.9)) + 
+  labs (y = "Count", x = "Start Time",
+        title = "Count of Events, Late and Early",
+        subtitle= "Music, Aquarium, and Sports")
+p1
+```
+
+# Continued Visualizations
+
+Below are a few graphs that plot an event's start time and end time, as they times relate to the number of attendees monitored and kicked. 
+
+Our line of thinking in engineering this feature is that later events will likely result in more attendeeds being monitored or kicked, particulary at events where alcohol is typically consumed. 
+
+At first glance, the trends lines indicate that this line of inquiry is likely uninstructive, as the trend lines seem consistent with the mean. 
+
+But, as seen below, with split graphs, where data is partitioned according to event category, we find that the trend varies quite significantly from the mean. These graphs, howerever seemingly trivial, provide insight into the type of analysis we might conduct at a later time. 
+
+For example, we might consider used a mixed linear model approach in modelling our data in order to account for group effects with respect to event category. If we plan to use a machine learning approach, it is generally thought that the more features we have for our learning algorithm, the better. 
+
+
+```{r foo6, fig.align = 'center', message=F, warning=F, echo=FALSE}
+library(ggplot2)
+p4 = ggplot(train, 
+                     aes(x = train$start.time.hour, 
+                         y = train$monitored)) + 
+  geom_point(aes(color=event.categories))+
+  geom_smooth(method="lm") +
+  ggtitle("Monitored and Start Time") +
+  xlab(label = "Start Time Hour") +
+  ylab(label = "Number Monitored") + 
+  labs(colour = "Event Category") +
+  theme_light()
+p4
+```
+
+```{r foo7, fig.align = 'center', message=F, warning=F, echo=FALSE}
+library(ggplot2)
+p5 = ggplot(train, 
+                     aes(x = train$end.time.hour, 
+                         y = train$monitored)) + 
+  geom_point(aes(color=event.categories))+
+  geom_smooth(method="lm") +
+  ggtitle("Monitored and End Time") +
+  xlab(label = "End Time Hour") +
+  ylab(label = "Number Monitored") + 
+  labs(colour = "Event Category") +
+  theme_light()
+p5
+```
+
+# Continued Visualizations
+
+Below are data visualizations with split plots, as an example of the kind of exploratory analysis conducted for this report. Importantly, the sample sizes are somewhat too small to make meaningful conclusions at this stage; further, trends lines are generally more instructive for continuous data, and if we are examining kicked or not kicked, we're dealing with a classification problem. Nonetheless, the plots offer a point of depature for further analysis. (Here, more data would be useful.)
+
+```{r foo9, fig.align = 'center', message=F, warning=F, echo=FALSE}
+duration_and_kicked_and_categories = 
+  train %>%
+  select(duration, kicked, event.categories)
+
+ duration_and_kicked_and_categories = 
+  duration_and_kicked_and_categories %>%
+  mutate(duration = as.numeric(duration)/60/60/60)
+
+prelim_plot = ggplot(duration_and_kicked_and_categories, aes(x = duration_and_kicked_and_categories$duration, 
+                                              y = duration_and_kicked_and_categories$kicked)) + 
+  geom_point(aes(color=event.categories))+
+  geom_smooth(method="lm") +
+  ggtitle("Kicked and Duration") +
+  xlab(label = "Duration of Event") +
+  ylab(label = "Number Kicked") + 
+  labs(colour = "Event Category") +
+  theme_light()
+prelim_plot
+
+#---
+split_plot <- ggplot(aes(duration_and_kicked_and_categories$duration, 
+                         duration_and_kicked_and_categories$kicked), 
+                     data = duration_and_kicked_and_categories) + 
+  geom_point(aes(color=event.categories)) + 
+  facet_wrap(~ event.categories) + 
+  xlab("Duration") + 
+  ylab("Kicked") +
+  labs(colour = "Event") +
+  geom_smooth(method="lm") 
+split_plot
+```
+
+# Significance Testing
+
+Below are the results from a few very preliminary analyses. Linear models were used to examine relationships between new features and the rate at which individuals were monitored and kicked. Again, below is the result of one analysis from many. This re
