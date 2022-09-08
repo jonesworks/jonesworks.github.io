@@ -1,0 +1,369 @@
+---
+title: "Demo: Analytics"
+author: ""
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+#    social: menu
+#    source_code: embed
+---
+
+``` {js}
+// Inverse the color of navigation bar.
+$('.navbar-inverse').removeClass('navbar-inverse').addClass('navbar-default');
+```
+
+Sales and Reviews {data-icon="fa-area-chart"}
+=======================================================================
+
+```{r setup, include=FALSE}
+library(highcharter)
+library(dplyr)
+library(viridisLite)
+library(forecast)
+library(treemap)
+library(flexdashboard)
+library(tidyverse)
+library(arules)
+library(tidytext)
+
+thm <- 
+  hc_theme(
+    colors = c("#1a6ecc", "#434348", "#90ed7d"),
+    chart = list(
+      backgroundColor = "transparent",
+      style = list(fontFamily = "Source Sans Pro")
+    ),
+    xAxis = list(
+      gridLineWidth = 1
+    )
+  )
+
+```
+
+Column {data-width=600}
+-----------------------------------------------------------------------
+
+### __Order Forecast__
+
+```{r}
+library(fpp3)
+library(apexcharter)
+general = ts(read.csv("time_series_two.csv", header=TRUE)[,3], start = 244, frequency =12)
+
+fit <- auto.arima(general, xreg=fourier(general, K=6),
+                  seasonal=FALSE)
+
+fc = forecast(fit, level = 80,
+           xreg=fourier(general, K=6, h=14)) 
+
+fc = as_tibble(fc)
+
+time_ss = read.csv("time_series_two.csv")
+time_ss =as_tibble(time_ss)
+
+
+time_ss = time_ss %>%
+  select(general)
+
+fc = fc %>%
+  select(`Point Forecast`) %>%
+  rename(general = `Point Forecast`)
+
+fc$general = round(fc$general, 0)
+
+both = rbind(time_ss, fc)
+both = rowid_to_column(both, "id")
+
+
+apex(data = both, type = "line", mapping = aes(x = id, y = general)) %>% 
+  ax_stroke(width = 2) %>% ax_markers(size = 3) %>%
+  ax_fill(
+    type = "gradient",
+    gradient = list(
+      shade = "dark",
+      gradientToColors = list("#FDD835"),
+      shadeIntensity = 1,
+      type = "horizontal",
+      opacityFrom = 1,
+      opacityTo = 1,
+      stops = c(0, 100)
+    )
+  ) %>%
+  ax_annotations(
+    points = list(
+      list(
+        x = 45,
+        y = 5,
+        label = list(text = "First Forecast", offsetY = 0, color = "black",
+                     style = list(
+                       color = "black",
+                       background = "#fff")),
+        marker = list(size = 3)
+       
+      )
+    )
+)%>%
+  ax_theme(mode= "light") %>%
+  ax_tooltip(
+      y = list(
+        title = list(
+          formatter = JS("function() {return 'Order Count';}")
+        )
+      )
+  )  %>%
+  ax_xaxis(labels = list(hideOverlappingLabels = T,
+                         rotate = 0,
+                         trim = TRUE)) %>%
+  ax_title(text = "Daily Orders",
+           align = "center") %>%
+  ax_subtitle(text = "Two Month Window",
+              align = "center") 
+  
+```
+
+### __Order Value__
+
+```{r}
+questions = read.csv("order value.csv")
+
+#questions = dplyr::count(questions, sentiment_score)
+
+#questions = questions %>%
+#  rename(count = n) %>%
+#  drop_na() 
+
+#questions$sentiment_score = (questions$sentiment_score+20)*1.25
+#questions$count = questions$count*3
+
+questions_ = questions %>%
+  filter(between(sentiment_score, 24.95, 25.06))
+
+apex(
+  data = questions_, 
+  type = "area-spline", 
+  mapping = aes(x = sentiment_score, y = count)
+) %>%
+  ax_colors("#0B275E")%>%
+  ax_title(text = "Most Frequent Order Value",
+           align = "center") %>%
+  ax_theme(mode= "light") %>%
+  ax_yaxis(labels = list(
+    style = list(
+      colors = "#fff"
+    ))) %>%
+  ax_xaxis(tickPlacement = "between",
+           labels = list(
+    style = list(
+      colors = ""),
+      formatter = JS("function(val) {return val.toFixed(2);}")
+  )) 
+```
+
+Column {.tabset data-width=400}
+-----------------------------------------------------------------------
+
+### __Reviews__
+
+```{r, fig.keep='none'}
+questions = read.csv("treemap.csv")
+
+apex(
+  data = questions, 
+  type = "treemap", 
+  mapping = aes(x = category, y = n)
+) %>%
+  ax_colors("#404040") %>%
+  ax_theme(mode= "light",
+           palette = 6) %>%
+  ax_plotOptions(enableShades= FALSE
+) %>%
+  ax_title(text = "Prominent Words in Reviews",
+           align = "center",
+           offsetY = 10)
+```
+
+### __Commentary__
+<br>
+__Order Forecast__
+
+- The Order Forecast shows your restaurant's order volume the past month and a half.
+
+- It also provides a projection: based on past volume, we try to give you an estimate of what to expect.
+
+- It'll help you plan for upcoming weeks. 
+
+- It also shows whether order volume is expected to increase or decrease over time.
+
+- If you don't see much movement up or down, consider a marketing campaign or promotion. 
+
+- If things are heading in the wrong direction, check out our blog for resources on how to improve your restaurant's performance. 
+
+
+<br><br>
+
+---
+
+<br>
+__Reviews__
+
+- This chart (a treemap) breaks down your reviews by word frequency.
+
+- Let's say 'burger' is your biggest tile: that just means your customers have a lot to say about your burgers.
+
+- If you want to know how often each word's used, just hover over the tile with your cursor.
+
+- You might consider using the chart to help create upcoming marketing campaigns.
+
+- For example, you might write: 'Our burgers received more than 70 positive reviews the past month: burger lovers pretty much can't get enough of them! Come on in and take our best burger challenge.' 
+
+- We think the chart's a great way to get a bird's eye view of what your customers are saying: it gives insight into themes, popular items, and potential pains points.
+
+- Use it as a guide when digging deeper into customer feedback. 
+
+<br>
+
+
+---
+
+
+Mapping and Sentiment {data-icon="fa-search"}
+=======================================================================
+
+Column {.tabset data-width=600}
+-----------------------------------------------------------------------
+
+```{r}
+library(sf)
+library(leaflet)
+library(viridis)
+
+neighborhoods <- read_sf("sf_neighborhoods")
+lonlatca = read.csv("lonlat_purchasing.csv")
+neighborhoods_clean <- neighborhoods %>% 
+  st_transform(4326) %>% 
+  mutate(name = paste0('<b>Neighborhood:</b> ', name))
+
+lonlatca_clean <- lonlatca %>% 
+  mutate(popup = paste(paste0('<b>Purchase Amount: </b>$', paymentamount),
+                             paste0('<br> <b>Address: </b>', address),
+                       paste0('<br> <b>First Time or Repeat: </b>', repeater)))
+
+pal <- colorFactor(
+  palette = viridis_pal(begin = .4, end = .95, option = 'A')(3),
+  domain = lonlatca$paymentamountbucket
+)
+leaflet(height = "100%", width = "100%") %>% 
+  addTiles() %>% 
+  addPolygons(data = neighborhoods_clean,
+              color = 'white',
+              weight = 1.5,
+              opacity = 1,
+              fillColor = 'black',
+              fillOpacity = .6,
+              highlightOptions = highlightOptions(color = "#FFF1BE", 
+                                                  weight = 5),
+              popup = ~name) %>%
+  addCircleMarkers(data = lonlatca_clean,
+                   popup = ~popup,
+                   stroke = F,
+                   radius = 8,
+                   fillColor = ~pal(paymentamountbucket),
+                   fillOpacity = 1) %>%
+ addLegend(data = lonlatca_clean,
+            pal = pal,
+            values = ~paymentamountbucket,
+            title = "Purchases in San Francisco") 
+  
+```
+
+Column {.tabset data-width=400}
+-----------------------------------------------------------------------
+### __Customer Sentiment__
+
+```{r}
+library(apexcharter)
+questions = read.csv("sentiment.csv")
+
+questions = questions %>% 
+  rename(sentiment = n)
+
+apex(
+  data = questions, 
+     type = "bar", 
+     mapping = aes(x = category, y = sentiment)
+) %>%
+  ax_colors("rgb(241, 196, 15)")%>%
+  ax_title(text = "Cumulative Sentiment",
+          align = "center",
+          offsetY = 10) %>%
+  ax_theme(mode= "dark") %>%
+  ax_yaxis(labels = list(
+    style = list(
+      colors = "#fff"
+    ))) %>%
+  ax_xaxis(labels = list(
+    style = list(
+      colors = "#fff"
+    ))) 
+  
+```
+
+
+### __Commentary__
+<br>
+__Customer Mapping__
+
+- Click the dots to see order value and customer location.
+
+- High purchase value and repeat customers are more likely to provide referrals.
+
+- Consider offering these customers a free side dish if they refer a friend. 
+
+- Do your orders pool in certain locations? Are high value orders clustered, or dispersed?
+
+- Identifying trends like these can clue you in to meaningful consumer behavior.
+
+- For example, if you sell a lot of burgers downtown, that's useful.
+
+- Maybe a recent promotion highlighting your best burger challenge worked well downtown, but not so much in other areas. 
+
+- A lot of first time purchases? Great job! You're really getting yourself out there!
+
+- To learn more about how to put your map to use, check out our website: we've got a lot information to help you make sense of it all. 
+
+<br><br>
+
+---
+
+<br>
+__Sentiment__ 
+
+- This chart shows cumulative sentiment.
+
+- The higher the score, the better.
+
+- Anything close to zero or negative means your customers aren't happy.
+
+- Consider taking a closer look at associated reviews when that's the case.
+
+- On the other hand, let's say you have a +20 score on burgers: that means people describe your burgers in a positive light.
+
+- Cumulative sentiment can show you what you're doing well, and where you might need a little work.
+
+- Check out our blog for more information about how to put these findings to use. 
+
+<br>
+
+
+---
+
+
+
+
+
+
+
+
+
+
